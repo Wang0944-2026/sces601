@@ -3,19 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>上岐國小601電子聯絡簿</title>
+    <title>國小電子聯絡簿</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;600;700&display=swap');
-
         body {
             font-family: 'Noto Sans TC', sans-serif;
-            background: linear-gradient(to bottom right, #eff6ff, #e0e7ff);
-            min-height: 100vh;
-            padding: 1rem;
         }
-
         .homework-item {
             transition: all 0.3s ease;
         }
@@ -166,10 +160,10 @@
             color: #92400e;
         }
         
-        /* 跑馬燈動畫 */
+        /* 跑馬燈動畫 (升級為真正的雙容器無縫銜接法) */
         @keyframes scroll {
             0% { transform: translateX(0); }
-            100% { transform: translateX(-10%); }
+            100% { transform: translateX(-50%); } /* 移動總寬度的一半，達成完美無縫循環 */
         }
         .marquee-wrapper {
             overflow: hidden;
@@ -180,16 +174,25 @@
         .marquee-content {
             display: flex;
             white-space: nowrap;
-            animation: scroll 20s linear infinite; 
+            width: max-content;
+            /* 秒數改由 JS 動態寫入 inline-style，以支援動態調整 */
+            animation-name: scroll;
+            animation-timing-function: linear;
+            animation-iteration-count: infinite;
         }
         .marquee-wrapper:hover .marquee-content {
-            animation-play-state: paused;
+            animation-play-state: paused; /* 滑鼠懸停時暫停 */
+        }
+        .marquee-item-group {
+            display: flex;
+            align-items: center;
+            /* 讓每一個組合群組都能自成一體 */
         }
     </style>
 </head>
-<body>
-    
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-2 sm:p-4">
     <div class="max-w-4xl mx-auto">
+        <!-- 標題與頂部資訊 (增加響應式字級縮放) -->
         <div class="mb-4 text-center">
             <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold text-indigo-800 mb-2 md:mb-3">📚 上岐國小601聯絡簿</h1>
             <div class="text-sm sm:text-base md:text-lg font-medium flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap" id="dateInfo">
@@ -199,6 +202,7 @@
                 <span class="bg-purple-100 text-purple-800 px-2 sm:px-3 py-1 rounded-full" id="weekdayOnly">星期二</span>
             </div>
             
+            <!-- 日期控制按鈕 (優化手機版按鈕內距與間距) -->
             <div class="flex flex-wrap gap-2 sm:gap-3 justify-center mt-4">
                 <button onclick="previousDay()" class="group relative bg-gradient-to-r from-slate-500 to-slate-600 hover:from-slate-600 hover:to-slate-700 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center space-x-1 sm:space-x-2 text-sm sm:text-base">
                     <span class="text-base sm:text-lg group-hover:animate-pulse">⬅️</span>
@@ -217,30 +221,39 @@
                 </button>
             </div>
         </div>
-    
+
+        <!-- 跑馬燈倒數日曆 -->
         <div id="countdownMarquee" style="display: none;" class="max-w-4xl mx-auto mt-2 mb-4 bg-yellow-50 border-2 border-yellow-200 rounded-xl shadow-sm py-1.5 px-2 sm:px-4 marquee-wrapper cursor-default" title="將滑鼠移至上方可暫停跑馬燈">
-            <div class="marquee-content text-base sm:text-lg font-bold text-yellow-800" id="marqueeText">
+            <div class="text-base sm:text-lg font-bold text-yellow-800 w-full flex" id="marqueeText">
+                <!-- 跑馬燈內容會由 JS 動態寫入並套用速度設定 -->
             </div>
         </div>
-    
+
+        <!-- 聯絡簿卡片 -->
         <div class="bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8 mb-6">
+
+            <!-- 今日作業區域 -->
             <div class="mb-4 sm:mb-8">
+                <!-- 控制列：加入響應式換行機制，避免小螢幕擠壓 -->
                 <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
                     <div class="flex items-center flex-wrap gap-2">
                         <span class="text-xl sm:text-2xl shrink-0">📝</span>
                         <h2 class="font-bold text-gray-800 text-xl sm:text-2xl">今日作業</h2>
-    
+
+                        <!-- 同步狀態指示器 -->
                         <div id="syncIndicator" class="ml-2 flex items-center space-x-1 sm:space-x-2" style="display: none;">
                             <div class="w-2 h-2 sm:w-3 sm:h-3 bg-blue-500 rounded-full sync-indicator"></div>
                             <span class="text-xs sm:text-sm text-blue-600 font-medium">同步中...</span>
                         </div>
+                        <!-- 重新載入按鈕 -->
                         <button onclick="forceReloadHomework()" class="ml-2 bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 sm:px-3 sm:py-1 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center space-x-1" title="重新載入雲端資料">
                             <span class="text-xs sm:text-sm">🔄</span>
                             <span>重新載入</span>
                         </button>
                     </div>
+                    <!-- 編輯模式按鈕 -->
                     <button id="editModeBtn" onclick="toggleEditMode()" class="w-full sm:w-auto relative group bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform sm:hover:scale-105 flex justify-center items-center space-x-2" title="編輯作業">
-                        <span data-role="btn-content" class="flex items-center space-x-2">
+                        <span data-role="btn-content" class="inline-flex items-center gap-2">
                             <span id="editIcon" class="text-lg">🔐</span>
                             <span id="editText" class="font-medium text-sm">編輯模式</span>
                         </span>
@@ -252,16 +265,21 @@
                     </button>
                 </div>
                 
+                <!-- 作業列表容器 -->
                 <div id="homeworkContainer" class="space-y-4">
+                    <!-- 排序模式指示器 -->
                     <div id="sortModeIndicator" class="sort-mode-indicator" style="display: none;">
                         🔄 拖拽排序模式：拖動作業項目來調整順序
                     </div>
                     
+                    <!-- 已確認作業區 -->
                     <div id="confirmedSection">
                         <div id="confirmedList" class="space-y-3">
+                            <!-- 已確認的作業會顯示在這裡 -->
                         </div>
                     </div>
                     
+                    <!-- 編輯中作業區 -->
                     <div id="editingSection" style="display: none;">
                         <div class="flex items-center mb-3">
                             <div class="h-px bg-gray-300 flex-1"></div>
@@ -269,26 +287,64 @@
                             <div class="h-px bg-gray-300 flex-1"></div>
                         </div>
                         <div id="editingList" class="space-y-3">
+                            <!-- 編輯中的作業會顯示在這裡 -->
                         </div>
                     </div>
                     
+                    <!-- 載入狀態 -->
                     <div id="loadingState" class="text-center py-12 text-gray-500" style="display: none;">
                         <div class="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
                         <p class="text-lg font-medium mb-2">載入中...</p>
                         <p class="text-sm">正在讀取作業資料</p>
                     </div>
                     
+                    <!-- 空狀態提示 -->
                     <div id="emptyState" class="text-center py-12 text-gray-500">
                         <span class="text-6xl mb-4 block">📝</span>
                         <p class="text-xl font-medium mb-2">老師指派作業中...</p>
                     </div>
                 </div>
-    
-                <button id="addHomeworkBtn" onclick="addHomework()" class="mt-6 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-6 py-3 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 flex items-center shadow-lg" style="display: none;">
+
+                <!-- 新增作業按鈕 (編輯模式時顯示) -->
+                <button id="addHomeworkBtn" onclick="addHomework()" class="mt-6 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-6 py-3 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 flex items-center shadow-lg w-full justify-center sm:w-auto" style="display: none;">
                     <span class="text-xl mr-2">➕</span>
                     新增作業
                 </button>
+                
+                <!-- 全域跑馬燈設定區塊 (編輯模式時顯示) -->
+                <div id="marqueeEditSection" class="mt-8 pt-6 border-t-2 border-gray-100" style="display: none;">
+                    <div class="flex items-center mb-4">
+                        <span class="text-xl sm:text-2xl shrink-0 mr-2">📢</span>
+                        <h2 class="font-bold text-gray-800 text-xl sm:text-2xl">跑馬燈 / 活動設定 (全域顯示)</h2>
+                    </div>
+                    
+                    <!-- 跑馬燈移動速度控制 (放寬數值讓體感差距更明顯) -->
+                    <div class="mb-4 bg-yellow-50 p-4 rounded-xl border border-yellow-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div class="font-medium text-yellow-800 flex items-center">
+                            <span class="mr-2">🏃</span> 跑馬燈移動速度
+                        </div>
+                        <div class="flex items-center gap-3 w-full sm:w-auto">
+                            <span class="text-sm text-yellow-600 font-medium">快</span>
+                            <input type="range" min="10" max="120" value="40" id="marqueeSpeedSlider" class="w-full sm:w-32 h-2 bg-yellow-200 rounded-lg appearance-none cursor-pointer" oninput="updateMarqueeSpeed(this.value)">
+                            <span class="text-sm text-yellow-600 font-medium">慢</span>
+                            <span id="speedValueDisplay" class="text-sm font-bold text-yellow-700 w-8 text-right">40s</span>
+                        </div>
+                    </div>
+                    
+                    <div class="text-sm text-gray-500 mb-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
+                        💡 提示：系統會自動從下方的清單中，挑選出「距離最近的一場活動」並與「已打勾的純文字訊息」合併輪播。<br>
+                        變更會在您點擊右上角的「退出編輯」時一併儲存至雲端。
+                    </div>
+                    <div id="globalEventsList" class="space-y-3">
+                        <!-- 全域事件編輯項目由 JS 渲染 -->
+                    </div>
+                    <button onclick="addGlobalEvent()" class="mt-4 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-4 py-2 sm:py-3 rounded-xl font-medium transition-colors flex items-center justify-center w-full border border-yellow-300 shadow-sm border-dashed">
+                        <span class="text-xl mr-2">➕</span>
+                        新增跑馬燈訊息 / 活動
+                    </button>
+                </div>
             </div>
+
         </div>
     </div>
 
@@ -297,33 +353,54 @@
         let homeworkCounter = 0;
         let editMode = false;
         let isSaving = false;
-        let homeworkData = []; 
+        let homeworkData = []; // 統一的作業數據存儲
         
+        // 全域跑馬燈設定與狀態 (加入預設 enabled 狀態)
+        let globalConfig = { marqueeSpeed: 40 }; // 預設速度改為40秒
+        let globalEvents = [
+            { id: 'e1', type: 'countdown', name: '第一次定期評量 (4/16-17)', date: '2026-04-16', enabled: true },
+            { id: 'e2', type: 'countdown', name: '全台學力檢測 (5/28)', date: '2026-05-28', enabled: true },
+            { id: 'e3', type: 'countdown', name: '畢業班第二次定期評量 (6/1-5)', date: '2026-06-01', enabled: true },
+            { id: 'e4', type: 'countdown', name: '校慶＆畢業典禮 (6/18)', date: '2026-06-18', enabled: true }
+        ];
+        let isGlobalEventsModified = false;
+
+        // 學期日期範圍
         const firstSemesterStart = new Date('2025-09-01');
         const firstSemesterEnd = new Date('2026-01-20');
         const secondSemesterStart = new Date('2026-02-11');
         const secondSemesterEnd = new Date('2026-08-31');
-        
+
+        // Google Apps Script 網址
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwXXyyN1nib4ovwXmmEVzMYAS9j3X370DhRPLkXFNzQD16aYRi1r-bg5giOCc7nZPFhiQ/exec';
-        
+
+        // ===== 快取系統配置 =====
         const CACHE_CONFIG = {
-            TTL: 12 * 60 * 60 * 1000,
+            TTL: 12 * 60 * 60 * 1000, // 12小時 (縮短快取時間)
             CLASS_ID: '601',
-            SHOW_SYNC_HINTS: false,
+            SHOW_SYNC_HINTS: false, // 關閉同步提示減少干擾
             PREFETCH_WEEKENDS: false,
-            VERSION: '1.1.0',
-            DEBUG: true,
-            BACKGROUND_UPDATE_INTERVAL: 5000,
-            BACKGROUND_UPDATE_ENABLED: true
+            VERSION: '1.1.0', // 版本升級清理舊快取
+            DEBUG: true, // 開啟除錯模式以診斷問題
+            BACKGROUND_UPDATE_INTERVAL: 5000, // 5秒背景更新間隔
+            BACKGROUND_UPDATE_ENABLED: true // 啟用背景更新
         };
-        
+
+        // 記憶體快取 (Map)
         const memoryCache = new Map();
+        
+        // 進行中的請求 (併發去重)
         const inflightRequests = new Map();
+        
+        // 載入控制器 (中斷前一個載入)
         let currentLoadController = null;
+        
+        // 背景更新系統
         let backgroundUpdateTimer = null;
         let isBackgroundUpdating = false;
         let lastBackgroundUpdate = 0;
-        
+
+        // 快取項目結構
         class CacheItem {
             constructor(data, hash = null) {
                 this.data = data;
@@ -338,7 +415,7 @@
                 for (let i = 0; i < str.length; i++) {
                     const char = str.charCodeAt(i);
                     hash = ((hash << 5) - hash) + char;
-                    hash = hash & hash; 
+                    hash = hash & hash; // 轉為32位整數
                 }
                 return hash.toString(36);
             }
@@ -351,11 +428,13 @@
                 return this.version === CACHE_CONFIG.VERSION;
             }
         }
-        
+
+        // 生成快取鍵
         function getCacheKey(dateKey) {
             return `hw:${CACHE_CONFIG.CLASS_ID}:${dateKey}`;
         }
-        
+
+        // 從記憶體快取讀取
         function getFromMemoryCache(dateKey) {
             const cacheKey = getCacheKey(dateKey);
             const item = memoryCache.get(cacheKey);
@@ -364,9 +443,14 @@
                 memoryCache.delete(cacheKey);
                 return null;
             }
+            
+            if (CACHE_CONFIG.DEBUG) {
+                console.log(`📋 記憶體快取命中: ${dateKey}`);
+            }
             return item;
         }
-        
+
+        // 從localStorage讀取
         function getFromLocalStorage(dateKey) {
             try {
                 const cacheKey = getCacheKey(dateKey);
@@ -380,30 +464,50 @@
                     localStorage.removeItem(cacheKey);
                     return null;
                 }
+                
+                if (CACHE_CONFIG.DEBUG) {
+                    console.log(`💾 localStorage快取命中: ${dateKey}`);
+                }
                 return item;
             } catch (error) {
+                if (CACHE_CONFIG.DEBUG) {
+                    console.error('localStorage讀取失敗:', error);
+                }
                 return null;
             }
         }
-        
+
+        // 寫入快取 (記憶體 + localStorage)
         function writeToCache(dateKey, data, hash = null) {
             const cacheKey = getCacheKey(dateKey);
             const item = new CacheItem(data, hash);
             
+            // 寫入記憶體快取
             memoryCache.set(cacheKey, item);
             
+            // 寫入localStorage
             try {
                 localStorage.setItem(cacheKey, JSON.stringify(item));
-            } catch (error) {}
+                if (CACHE_CONFIG.DEBUG) {
+                    console.log(`💾 快取已更新: ${dateKey}, hash: ${item.hash}`);
+                }
+            } catch (error) {
+                if (CACHE_CONFIG.DEBUG) {
+                    console.error('localStorage寫入失敗:', error);
+                }
+            }
         }
-        
+
+        // 清理過期快取
         function cleanExpiredCache() {
+            // 清理記憶體快取
             for (const [key, item] of memoryCache.entries()) {
                 if (item.isExpired() || !item.isValidVersion()) {
                     memoryCache.delete(key);
                 }
             }
             
+            // 清理localStorage
             try {
                 const keysToRemove = [];
                 for (let i = 0; i < localStorage.length; i++) {
@@ -425,15 +529,23 @@
                         }
                     }
                 }
+                
                 keysToRemove.forEach(key => localStorage.removeItem(key));
-            } catch (error) {}
+                if (keysToRemove.length > 0 && CACHE_CONFIG.DEBUG) {
+                    console.log(`🧹 清理了 ${keysToRemove.length} 個過期快取`);
+                }
+            } catch (error) {
+                console.error('清理localStorage失敗:', error);
+            }
         }
-        
+
+        // 計算穩定的雜湊值（用於快取比對）
         function calculateStableHash(rawData) {
             if (!rawData || !Array.isArray(rawData)) {
                 return 'empty';
             }
             
+            // 只對內容相關的欄位計算雜湊，排除時間戳等變動欄位
             const stableContent = rawData.map(item => {
                 if (typeof item === 'string') {
                     return { content: item.trim(), subject: '國語', status: 'confirmed' };
@@ -452,11 +564,12 @@
             for (let i = 0; i < str.length; i++) {
                 const char = str.charCodeAt(i);
                 hash = ((hash << 5) - hash) + char;
-                hash = hash & hash; 
+                hash = hash & hash; // 轉為32位整數
             }
             return hash.toString(36);
         }
-        
+
+        // 生成穩定的作業ID（基於內容）
         function generateStableId(subject, content, index) {
             const baseStr = `${subject}|${content}|${index}`;
             let hash = 0;
@@ -467,7 +580,8 @@
             }
             return `hw_${hash.toString(36)}`;
         }
-        
+
+        // 資料標準化處理
         function normalizeHomeworkData(rawData) {
             if (!rawData || !Array.isArray(rawData)) {
                 return [];
@@ -497,6 +611,7 @@
                 }
                 
                 if (content) {
+                    // 使用穩定的ID生成方式
                     const stableId = generateStableId(subject, content, index);
                     return new HomeworkItem(
                         stableId,
@@ -509,7 +624,8 @@
                 return null;
             }).filter(Boolean);
         }
-        
+
+        // 計算上一個/下一個上課日
         function getPreviousSchoolDay(date) {
             const prev = new Date(date);
             do {
@@ -518,7 +634,7 @@
             } while (prev.getDay() === 0 || prev.getDay() === 6);
             return prev;
         }
-        
+
         function getNextSchoolDay(date) {
             const next = new Date(date);
             do {
@@ -527,7 +643,8 @@
             } while (next.getDay() === 0 || next.getDay() === 6);
             return next;
         }
-        
+
+        // 預取鄰近日期
         async function prefetchAdjacentDays(currentDateKey) {
             if (!CACHE_CONFIG.SHOW_SYNC_HINTS) return;
             
@@ -541,7 +658,9 @@
                 const prevDateKey = dateKeyISO(prevDay);
                 if (!getFromMemoryCache(prevDateKey)) {
                     prefetchPromises.push(
-                        loadFromCloudWithCache(prevDateKey, true).catch(() => {})
+                        loadFromCloudWithCache(prevDateKey, true).catch(e => 
+                            console.log(`預取前一天失敗: ${prevDateKey}`, e)
+                        )
                     );
                 }
             }
@@ -550,24 +669,29 @@
                 const nextDateKey = dateKeyISO(nextDay);
                 if (!getFromMemoryCache(nextDateKey)) {
                     prefetchPromises.push(
-                        loadFromCloudWithCache(nextDateKey, true).catch(() => {})
+                        loadFromCloudWithCache(nextDateKey, true).catch(e => 
+                            console.log(`預取後一天失敗: ${nextDateKey}`, e)
+                        )
                     );
                 }
             }
             
             if (prefetchPromises.length > 0) {
-                Promise.all(prefetchPromises);
+                Promise.all(prefetchPromises).then(() => {
+                    console.log(`🚀 預取完成，已快取鄰近 ${prefetchPromises.length} 天`);
+                });
             }
         }
-        
+
+        // 背景更新系統
         async function performBackgroundUpdate() {
             if (isBackgroundUpdating || editMode) {
-                return; 
+                return; // 編輯模式時不進行背景更新
             }
             
             const now = Date.now();
             if (now - lastBackgroundUpdate < CACHE_CONFIG.BACKGROUND_UPDATE_INTERVAL) {
-                return; 
+                return; // 間隔時間未到
             }
             
             isBackgroundUpdating = true;
@@ -577,19 +701,37 @@
                 const dateKey = dateKeyISO(currentDate);
                 const cacheItem = getFromMemoryCache(dateKey) || getFromLocalStorage(dateKey);
                 
+                if (CACHE_CONFIG.DEBUG) {
+                    console.log('🔄 執行背景更新檢查:', dateKey);
+                }
+                
+                // 靜默載入最新資料
                 const cloudResult = await loadFromCloudWithCache(dateKey, true);
                 
+                // 比較資料是否有變更
                 if (cacheItem && cloudResult.hash && cacheItem.hash !== cloudResult.hash) {
+                    if (CACHE_CONFIG.DEBUG) {
+                        console.log('📢 背景更新發現資料變更');
+                    }
+                    
+                    // 更新資料但不立即渲染，顯示提示
                     showBackgroundUpdateNotification();
+                } else if (CACHE_CONFIG.DEBUG) {
+                    console.log('✅ 背景更新：資料無變更');
                 }
                 
             } catch (error) {
+                if (CACHE_CONFIG.DEBUG) {
+                    console.log('🔄 背景更新失敗:', error.message);
+                }
             } finally {
                 isBackgroundUpdating = false;
             }
         }
-        
+
+        // 顯示背景更新通知
         function showBackgroundUpdateNotification() {
+            // 檢查是否已有通知
             if (document.getElementById('backgroundUpdateNotification')) {
                 return;
             }
@@ -617,43 +759,57 @@
             
             document.body.appendChild(notification);
             
+            // 10秒後自動消失
             setTimeout(() => {
                 dismissBackgroundUpdate();
             }, 10000);
         }
-        
+
+        // 應用背景更新
         async function applyBackgroundUpdate() {
             dismissBackgroundUpdate();
             await forceReloadHomework();
         }
-        
+
+        // 關閉背景更新通知
         function dismissBackgroundUpdate() {
             const notification = document.getElementById('backgroundUpdateNotification');
             if (notification) {
                 notification.remove();
             }
         }
-        
+
+        // 啟動背景更新定時器
         function startBackgroundUpdate() {
             if (!CACHE_CONFIG.BACKGROUND_UPDATE_ENABLED) return;
             
-            stopBackgroundUpdate(); 
+            stopBackgroundUpdate(); // 先停止現有的定時器
             
             backgroundUpdateTimer = setInterval(() => {
                 if (document.visibilityState === 'visible') {
                     performBackgroundUpdate();
                 }
             }, CACHE_CONFIG.BACKGROUND_UPDATE_INTERVAL);
+            
+            if (CACHE_CONFIG.DEBUG) {
+                console.log('🔄 背景更新定時器已啟動');
+            }
         }
-        
+
+        // 停止背景更新定時器
         function stopBackgroundUpdate() {
             if (backgroundUpdateTimer) {
                 clearInterval(backgroundUpdateTimer);
                 backgroundUpdateTimer = null;
+                if (CACHE_CONFIG.DEBUG) {
+                    console.log('🔄 背景更新定時器已停止');
+                }
             }
         }
-        
+
+        // 生成日期鍵值 - 使用台北時區
         function dateKeyISO(d) {
+            // 使用 Intl.DateTimeFormat 確保正確的台北時區轉換
             const taipeiDate = new Intl.DateTimeFormat('zh-TW', {
                 timeZone: 'Asia/Taipei',
                 year: 'numeric',
@@ -667,19 +823,24 @@
             
             return `${year}-${month}-${day}`;
         }
-        
+
+        // 作業數據結構
         class HomeworkItem {
             constructor(id, subject, content, status = 'editing', timestamp = null) {
                 this.id = id || `hw_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                 this.subject = subject || '國語';
                 this.content = content || '';
-                this.status = status; 
+                this.status = status; // 'confirmed', 'pending', 'editing'
                 this.timestamp = timestamp || new Date().toISOString();
             }
         }
-        
-        function updateHomeworkStats() {}
-        
+
+        // 更新作業統計
+        function updateHomeworkStats() {
+            // 統計功能已移除
+        }
+
+        // 渲染作業項目 (移除內聯樣式，加入 RWD 與防溢出設定)
         function renderHomeworkItem(homework) {
             const item = document.createElement('div');
             item.className = 'homework-item rounded-xl p-3 sm:p-4 shadow-md';
@@ -704,8 +865,8 @@
                         </div>
                     </div>
                 `;
-        
-            } else { 
+
+            } else { // editing
                 item.classList.add('homework-editing');
                 item.innerHTML = `
                     <div class="space-y-3">
@@ -740,8 +901,11 @@
             
             return item;
         }
-        
+
+        // 渲染所有作業 - 優化版本
         function renderAllHomework(isLoading = false) {
+            const startTime = performance.now();
+            
             const confirmedList = document.getElementById('confirmedList');
             const editingList = document.getElementById('editingList');
             const confirmedSection = document.getElementById('confirmedSection');
@@ -749,6 +913,7 @@
             const emptyState = document.getElementById('emptyState');
             const loadingState = document.getElementById('loadingState');
             
+            // 顯示載入狀態
             if (isLoading) {
                 confirmedSection.style.display = 'none';
                 editingSection.style.display = 'none';
@@ -757,29 +922,36 @@
                 return;
             }
             
+            // 隱藏載入狀態
             loadingState.style.display = 'none';
             
+            // 分類作業
             const confirmed = homeworkData.filter(hw => hw.status === 'confirmed');
             const editing = homeworkData.filter(hw => hw.status === 'editing');
             
+            // 使用 DocumentFragment 批次處理 DOM 操作
             const confirmedFragment = document.createDocumentFragment();
             const editingFragment = document.createDocumentFragment();
             
+            // 渲染已確認作業 - 直接在創建時加入序號
             confirmed.forEach((homework, index) => {
                 const item = renderHomeworkItemOptimized(homework, index + 1);
                 confirmedFragment.appendChild(item);
             });
             
+            // 渲染編輯中作業
             editing.forEach(homework => {
                 const item = renderHomeworkItem(homework);
                 editingFragment.appendChild(item);
             });
             
+            // 一次性更新 DOM
             confirmedList.innerHTML = '';
             editingList.innerHTML = '';
             confirmedList.appendChild(confirmedFragment);
             editingList.appendChild(editingFragment);
             
+            // 控制區塊顯示
             const hasConfirmed = confirmed.length > 0;
             const hasEditing = editing.length > 0 && editMode;
             const hasAnyHomework = hasConfirmed || hasEditing;
@@ -788,33 +960,45 @@
             editingSection.style.display = hasEditing ? 'block' : 'none';
             emptyState.style.display = hasAnyHomework ? 'none' : 'block';
             
+            // 更新統計
             updateHomeworkStats();
+            
+            const renderTime = performance.now() - startTime;
+            if (CACHE_CONFIG.DEBUG) {
+                console.log(`🎨 T_render: ${renderTime.toFixed(1)}ms (${confirmed.length + editing.length} 項目)`);
+            }
         }
-        
+
+        // 優化的作業項目渲染 - 已確認作業專用 (移除內聯樣式，加入 RWD 與防溢出設定)
         function renderHomeworkItemOptimized(homework, sequenceNumber) {
             const item = document.createElement('div');
             item.className = 'homework-item rounded-xl p-3 sm:p-4 shadow-md homework-confirmed';
             item.dataset.homeworkId = homework.id;
             
+            // 在編輯模式下添加拖拽功能
             if (editMode) {
                 item.classList.add('sortable-item');
                 item.draggable = true;
                 
+                // 移除舊的事件監聽器（如果存在）
                 item.removeEventListener('dragstart', handleDragStart);
                 item.removeEventListener('dragend', handleDragEnd);
                 item.removeEventListener('dragover', handleDragOver);
                 item.removeEventListener('drop', handleDrop);
                 
+                // 添加新的事件監聽器
                 item.addEventListener('dragstart', handleDragStart);
                 item.addEventListener('dragend', handleDragEnd);
                 item.addEventListener('dragover', handleDragOver);
                 item.addEventListener('drop', handleDrop);
             }
             
+            // 直接組裝顯示文字，避免後續 DOM 查詢
             let displayText;
             if (homework.subject === '其它') {
                 displayText = `${sequenceNumber}. ${homework.content}`;
             } else {
+                // 特定科目只顯示字首
                 const subjectMap = {
                     '國語': '國',
                     '數學': '數',
@@ -852,11 +1036,13 @@
             
             return item;
         }
-        
+
+        // 拖拽排序功能
         let draggedElement = null;
         let draggedHomeworkId = null;
-        
+
         function handleDragStart(e) {
+            // 確保拖拽的是整個作業項目
             const homeworkItem = e.target.closest('.sortable-item');
             if (!homeworkItem) return;
             
@@ -864,16 +1050,18 @@
             draggedHomeworkId = homeworkItem.dataset.homeworkId;
             homeworkItem.classList.add('dragging');
             
+            // 設置拖拽資料
             e.dataTransfer.effectAllowed = 'move';
             e.dataTransfer.setData('text/plain', draggedHomeworkId);
         }
-        
+
         function handleDragEnd(e) {
             const homeworkItem = e.target.closest('.sortable-item');
             if (homeworkItem) {
                 homeworkItem.classList.remove('dragging');
             }
             
+            // 清理所有拖拽樣式
             document.querySelectorAll('.sortable-item').forEach(item => {
                 item.classList.remove('drag-over');
             });
@@ -881,7 +1069,7 @@
             draggedElement = null;
             draggedHomeworkId = null;
         }
-        
+
         function handleDragOver(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -890,15 +1078,19 @@
             
             e.dataTransfer.dropEffect = 'move';
             
+            // 找到目標作業項目
             const dropTarget = e.target.closest('.sortable-item');
             if (dropTarget && dropTarget !== draggedElement) {
+                // 清理所有拖拽樣式
                 document.querySelectorAll('.sortable-item').forEach(item => {
                     item.classList.remove('drag-over');
                 });
+                
+                // 添加視覺提示
                 dropTarget.classList.add('drag-over');
             }
         }
-        
+
         function handleDrop(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -908,27 +1100,38 @@
             const dropTarget = e.target.closest('.sortable-item');
             if (dropTarget && dropTarget !== draggedElement) {
                 const dropTargetId = dropTarget.dataset.homeworkId;
+                
+                // 重新排序作業陣列
                 reorderHomework(draggedHomeworkId, dropTargetId);
+                
+                // 重新渲染
                 renderAllHomework();
                 showNotification('作業順序已調整', 'success');
             }
             
+            // 清理拖拽樣式
             document.querySelectorAll('.sortable-item').forEach(item => {
                 item.classList.remove('drag-over');
             });
         }
-        
+
         function reorderHomework(draggedId, targetId) {
             const draggedIndex = homeworkData.findIndex(hw => hw.id === draggedId);
             const targetIndex = homeworkData.findIndex(hw => hw.id === targetId);
             
             if (draggedIndex === -1 || targetIndex === -1) return;
             
+            // 移除被拖拽的項目
             const draggedItem = homeworkData.splice(draggedIndex, 1)[0];
+            
+            // 插入到目標位置
             homeworkData.splice(targetIndex, 0, draggedItem);
+            
+            // 更新時間戳
             draggedItem.timestamp = new Date().toISOString();
         }
-        
+
+        // 更新作業科目
         function updateHomeworkSubject(id, subject) {
             const homework = homeworkData.find(hw => hw.id === id);
             if (homework) {
@@ -936,13 +1139,15 @@
                 homework.timestamp = new Date().toISOString();
             }
         }
-        
+
+        // 更新作業內容
         function updateHomeworkContent(id, content) {
             const homework = homeworkData.find(hw => hw.id === id);
             if (homework) {
                 homework.content = content;
                 homework.timestamp = new Date().toISOString();
                 
+                // 更新確認按鈕狀態
                 const item = document.querySelector(`[data-homework-id="${id}"]`);
                 const confirmBtn = item?.querySelector('button[onclick*="confirmHomework"]');
                 if (confirmBtn) {
@@ -954,7 +1159,8 @@
                 }
             }
         }
-        
+
+        // 確認作業
         function confirmHomework(id) {
             const homework = homeworkData.find(hw => hw.id === id);
             if (homework && homework.content.trim()) {
@@ -966,7 +1172,8 @@
                 showNotification('請先輸入作業內容！', 'warning');
             }
         }
-        
+
+        // 編輯作業
         function editHomework(id) {
             if (!editMode) {
                 showNotification('請先進入編輯模式！', 'warning');
@@ -979,6 +1186,7 @@
                 homework.timestamp = new Date().toISOString();
                 renderAllHomework();
                 
+                // 聚焦到輸入框
                 setTimeout(() => {
                     const item = document.querySelector(`[data-homework-id="${id}"]`);
                     const input = item?.querySelector('input[type="text"]');
@@ -989,7 +1197,8 @@
                 }, 100);
             }
         }
-        
+
+        // 刪除作業
         function deleteHomework(id) {
             if (!editMode) {
                 showNotification('請先進入編輯模式！', 'warning');
@@ -1003,7 +1212,8 @@
                 showNotification('作業已刪除！', 'success');
             }
         }
-        
+
+        // 新增作業
         function addHomework() {
             if (!editMode) {
                 showNotification('請先進入編輯模式！', 'warning');
@@ -1014,6 +1224,7 @@
             homeworkData.push(newHomework);
             renderAllHomework();
             
+            // 聚焦到新作業的輸入框
             setTimeout(() => {
                 const item = document.querySelector(`[data-homework-id="${newHomework.id}"]`);
                 const input = item?.querySelector('input[type="text"]');
@@ -1023,6 +1234,192 @@
             }, 100);
         }
         
+        // ------------------ 全域跑馬燈設定相關函數 ------------------
+        
+        // 調整跑馬燈速度
+        function updateMarqueeSpeed(val) {
+            globalConfig.marqueeSpeed = parseInt(val, 10);
+            isGlobalEventsModified = true;
+            document.getElementById('speedValueDisplay').textContent = globalConfig.marqueeSpeed + 's';
+            
+            // 觸發重新繪製以即時套用速度
+            const stripTime = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+            updateCountdown(stripTime(currentDate));
+        }
+
+        // 渲染全域事件編輯區塊 (加入勾選框)
+        function renderGlobalEventsEditor() {
+            const container = document.getElementById('globalEventsList');
+            if (!container) return;
+            
+            container.innerHTML = globalEvents.map((ev, index) => {
+                const isChecked = ev.enabled !== false; // 預設為 true
+                const opacityClass = isChecked ? '' : 'opacity-50';
+                
+                if (ev.type === 'countdown') {
+                    return `
+                    <div class="bg-yellow-50 rounded-xl p-3 sm:p-4 border border-yellow-200 shadow-sm flex flex-col sm:flex-row gap-3 items-start sm:items-center transition-opacity ${opacityClass}">
+                        <div class="flex items-center shrink-0">
+                            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="updateGlobalEventField('${ev.id}', 'enabled', this)" class="w-5 h-5 text-yellow-600 rounded focus:ring-yellow-400 cursor-pointer" title="顯示/隱藏此項目">
+                        </div>
+                        <select onchange="updateGlobalEventField('${ev.id}', 'type', this)" class="bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-sm font-medium focus:ring-2 focus:ring-yellow-400">
+                            <option value="countdown" selected>活動倒數</option>
+                            <option value="message">純文字訊息</option>
+                        </select>
+                        <input type="text" value="${ev.name || ''}" placeholder="活動名稱 (例: 期中考)" oninput="updateGlobalEventField('${ev.id}', 'name', this)" class="flex-1 w-full bg-white border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-yellow-400">
+                        <input type="date" value="${ev.date || ''}" onchange="updateGlobalEventField('${ev.id}', 'date', this)" class="bg-white w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-yellow-400">
+                        <button onclick="removeGlobalEvent('${ev.id}')" class="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors ml-auto sm:ml-0 border border-red-100 bg-white shadow-sm" title="刪除此項目">🗑️</button>
+                    </div>`;
+                } else {
+                    return `
+                    <div class="bg-yellow-50 rounded-xl p-3 sm:p-4 border border-yellow-200 shadow-sm flex flex-col sm:flex-row gap-3 items-start sm:items-center transition-opacity ${opacityClass}">
+                        <div class="flex items-center shrink-0">
+                            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="updateGlobalEventField('${ev.id}', 'enabled', this)" class="w-5 h-5 text-yellow-600 rounded focus:ring-yellow-400 cursor-pointer" title="顯示/隱藏此項目">
+                        </div>
+                        <select onchange="updateGlobalEventField('${ev.id}', 'type', this)" class="bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-sm font-medium focus:ring-2 focus:ring-yellow-400">
+                            <option value="countdown">活動倒數</option>
+                            <option value="message" selected>純文字訊息</option>
+                        </select>
+                        <input type="text" value="${ev.content || ''}" placeholder="輸入跑馬燈宣導訊息..." oninput="updateGlobalEventField('${ev.id}', 'content', this)" class="flex-1 w-full bg-white border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-yellow-400">
+                        <button onclick="removeGlobalEvent('${ev.id}')" class="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors ml-auto sm:ml-0 border border-red-100 bg-white shadow-sm" title="刪除此項目">🗑️</button>
+                    </div>`;
+                }
+            }).join('');
+        }
+        
+        function updateGlobalEventField(id, field, element) {
+            const ev = globalEvents.find(e => e.id === id);
+            if (ev) {
+                // 區分 checkbox 的取值邏輯
+                ev[field] = element.type === 'checkbox' ? element.checked : element.value;
+                isGlobalEventsModified = true;
+                
+                // 若切換狀態，觸發介面半透明效果刷新
+                if (field === 'enabled') {
+                    renderGlobalEventsEditor();
+                }
+                
+                // 即刻預覽跑馬燈變化
+                const stripTime = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                updateCountdown(stripTime(currentDate));
+                
+                // 如果切換類型，需要補足預設值並重新渲染以更換輸入框格式
+                if (field === 'type') {
+                    if (element.value === 'countdown' && !ev.date) {
+                        ev.date = new Date().toISOString().split('T')[0];
+                        ev.name = ev.content || '新活動';
+                    }
+                    renderGlobalEventsEditor();
+                }
+            }
+        }
+        
+        function addGlobalEvent() {
+            globalEvents.push({
+                id: 'ev_' + Date.now(),
+                type: 'message',
+                content: '這是一條新的跑馬燈訊息',
+                enabled: true
+            });
+            isGlobalEventsModified = true;
+            renderGlobalEventsEditor();
+            
+            // 更新預覽
+            const stripTime = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+            updateCountdown(stripTime(currentDate));
+        }
+        
+        function removeGlobalEvent(id) {
+            globalEvents = globalEvents.filter(e => e.id !== id);
+            isGlobalEventsModified = true;
+            renderGlobalEventsEditor();
+            
+            // 更新預覽
+            const stripTime = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+            updateCountdown(stripTime(currentDate));
+        }
+        
+        // 儲存全域設定至雲端 (借用 GAS 現有 API，儲存於特殊的 dateKey)
+        async function saveGlobalEventsInstantly() {
+            try {
+                // 將設定封裝為相容的陣列格式
+                const legacyData = globalEvents.map(e => ({
+                    text: JSON.stringify(e),
+                    subject: 'SYS_EVENT',
+                    confirmed: true,
+                    timestamp: new Date().toISOString()
+                }));
+                
+                // 增加一個記錄來儲存全域 Config (例如速度)
+                legacyData.push({
+                    text: JSON.stringify(globalConfig),
+                    subject: 'SYS_CONFIG',
+                    confirmed: true,
+                    timestamp: new Date().toISOString()
+                });
+
+                await saveToGoogleSheets('GLOBAL_SETTINGS', legacyData);
+                console.log('✅ 全域跑馬燈設定已儲存至雲端');
+            } catch (e) {
+                console.error('儲存全域跑馬燈失敗:', e);
+            }
+        }
+        
+        // 載入全域設定
+        async function loadGlobalEvents() {
+            try {
+                // 傳入 isPrefetch=true，避免它干擾或顯示載入中動畫
+                const cloudResult = await loadFromCloudWithCache('GLOBAL_SETTINGS', true);
+                if (cloudResult.data && cloudResult.data.length > 0) {
+                    
+                    // 解析活動陣列
+                    const parsedEvents = cloudResult.data
+                        .filter(item => item.subject === 'SYS_EVENT')
+                        .map(item => {
+                            try { return JSON.parse(item.content); } catch(e) { return null; }
+                        })
+                        .filter(Boolean);
+                    
+                    if (parsedEvents.length > 0) {
+                        globalEvents = parsedEvents;
+                    }
+                    
+                    // 解析 Config (跑馬燈速度等)
+                    const configItem = cloudResult.data.find(item => item.subject === 'SYS_CONFIG');
+                    if (configItem) {
+                        try {
+                            const loadedConfig = JSON.parse(configItem.content);
+                            if (loadedConfig && loadedConfig.marqueeSpeed) {
+                                globalConfig.marqueeSpeed = loadedConfig.marqueeSpeed;
+                            }
+                        } catch(e) {}
+                    }
+
+                    // 重新繪製跑馬燈
+                    const stripTime = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                    updateCountdown(stripTime(currentDate));
+                    
+                    // 若當下正在編輯模式，更新控制條顯示
+                    if (editMode) {
+                        renderGlobalEventsEditor();
+                        const slider = document.getElementById('marqueeSpeedSlider');
+                        const display = document.getElementById('speedValueDisplay');
+                        if (slider && display) {
+                            slider.value = globalConfig.marqueeSpeed;
+                            display.textContent = globalConfig.marqueeSpeed + 's';
+                        }
+                    }
+                    
+                    console.log('✅ 成功從雲端載入全域跑馬燈設定');
+                }
+            } catch (e) {
+                console.log('無自訂跑馬燈設定，繼續使用系統預設值', e);
+            }
+        }
+
+        // -----------------------------------------------------------
+
+        // 顯示儲存對話框
         function showSavingDialog(message = '正在儲存到雲端...') {
             const existingOverlay = document.querySelector('.saving-overlay');
             if (existingOverlay) existingOverlay.remove();
@@ -1045,14 +1442,16 @@
             
             return overlay;
         }
-        
+
+        // 隱藏儲存對話框
         function hideSavingDialog() {
             const overlay = document.querySelector('.saving-overlay');
             if (overlay) {
                 overlay.remove();
             }
         }
-        
+
+        // 顯示同步狀態
         function showSyncStatus(isVisible, message = '同步中...') {
             const indicator = document.getElementById('syncIndicator');
             const text = indicator.querySelector('span');
@@ -1064,7 +1463,8 @@
                 indicator.style.display = 'none';
             }
         }
-        
+
+        // 顯示通知訊息
         function showNotification(message, type = 'success') {
             let notification = document.getElementById('notification');
             if (!notification) {
@@ -1111,7 +1511,8 @@
                 }
             }, 4000);
         }
-        
+
+        // 儲存到Google試算表
         async function saveToGoogleSheets(dateKey, homeworkData) {
             try {
                 const formData = new FormData();
@@ -1122,20 +1523,20 @@
                 formData.append('token', 'homework2025');
                 formData.append('ua', navigator.userAgent || 'unknown');
                 formData.append('timestamp', new Date().toISOString());
-        
+
                 const response = await fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
                     body: formData,
                     cache: 'no-store',
                     redirect: 'follow'
                 });
-        
+
                 if (!response.ok) {
                     throw new Error(`HTTP錯誤 ${response.status}: ${response.statusText}`);
                 }
-        
+
                 const responseText = await response.text();
-        
+
                 let result;
                 try {
                     result = JSON.parse(responseText);
@@ -1161,13 +1562,19 @@
                 };
             }
         }
-        
+
+        // 從雲端載入 (帶快取整合) - 修正版本
         async function loadFromCloudWithCache(dateKey, isPrefetch = false) {
+            const startTime = performance.now();
+            
+            // 檢查是否有進行中的請求 (併發去重)
             if (inflightRequests.has(dateKey)) {
                 return await inflightRequests.get(dateKey);
             }
             
+            // 建立新的載入Promise
             const loadPromise = (async () => {
+                // 在函式作用域開始就宣告變數，避免 ReferenceError
                 let controller = null;
                 let timeoutId = null;
                 
@@ -1176,23 +1583,26 @@
                         showSyncStatus(true, '載入中...');
                     }
                     
+                    // 建立AbortController
                     controller = new AbortController();
-                    timeoutId = setTimeout(() => controller.abort(), 15000); 
+                    timeoutId = setTimeout(() => controller.abort(), 15000); // 延長超時時間到15秒
                     
                     if (!isPrefetch) {
+                        // 中斷前一個載入
                         if (currentLoadController) {
                             currentLoadController.abort();
                         }
                         currentLoadController = controller;
                     }
                     
+                    // 使用GET方法，因為後端的load處理在doGet中
                     const params = new URLSearchParams({
                         action: 'load',
                         dateKey: dateKey,
                         classId: CACHE_CONFIG.CLASS_ID,
                         token: 'homework2025',
                         timestamp: Date.now().toString(),
-                        _t: Date.now() 
+                        _t: Date.now() // 防止快取
                     });
                     
                     const url = `${APPS_SCRIPT_URL}?${params.toString()}`;
@@ -1214,6 +1624,7 @@
                     }
                     
                     const responseText = await response.text();
+                    
                     let result;
                     
                     try {
@@ -1222,7 +1633,9 @@
                         throw new Error(`伺服器回應格式錯誤: ${parseError.message}`);
                     }
                     
+                    // 檢查回應結構
                     if (result && typeof result === 'object') {
+                        // 更寬鬆的成功判斷
                         const isSuccess = result.success === true || 
                                         result.ok === true || 
                                         result.status === 'success' || 
@@ -1233,12 +1646,18 @@
                         if (isSuccess) {
                             const rawData = result.data || result.homework || result.homeworkData || [];
                             const normalizedData = normalizeHomeworkData(rawData);
+                            
+                            // 優先使用後端提供的etag，提升快取穩定性
                             const hash = result.etag || result.hash || calculateStableHash(rawData);
                             
+                            // 寫入快取
                             writeToCache(dateKey, normalizedData, hash);
+                            
                             return { data: normalizedData, hash, fromCloud: true };
                         } else {
                             const errorMsg = result.error || result.msg || result.message || '載入失敗';
+                            
+                            // 如果是"找不到資料"相關錯誤，返回空陣列
                             if (errorMsg.includes('找不到') || 
                                 errorMsg.includes('not found') || 
                                 errorMsg.includes('No data') || 
@@ -1248,6 +1667,7 @@
                                 writeToCache(dateKey, emptyData, 'empty');
                                 return { data: emptyData, hash: 'empty', fromCloud: true };
                             }
+                            
                             throw new Error(errorMsg);
                         }
                     } else {
@@ -1259,6 +1679,7 @@
                         throw error;
                     }
                     
+                    // 嘗試從本地備份載入
                     try {
                         const legacyData = localStorage.getItem(dateKey);
                         if (legacyData) {
@@ -1268,13 +1689,16 @@
                         }
                     } catch (localError) {}
                     
+                    // 如果是網路錯誤，顯示錯誤訊息
                     if (!isPrefetch && (error.message.includes('fetch') || error.message.includes('網路') || error.message.includes('HTTP'))) {
                         showNotification(`載入失敗: ${error.message}`, 'error');
                     }
                     
+                    // 返回空資料
                     return { data: [], hash: null, fromCloud: false };
                     
                 } finally {
+                    // 安全地清理資源
                     if (timeoutId) {
                         clearTimeout(timeoutId);
                     }
@@ -1288,45 +1712,57 @@
                 }
             })();
             
+            // 加入進行中請求表
             inflightRequests.set(dateKey, loadPromise);
             
             try {
                 const result = await loadPromise;
                 return result;
             } finally {
+                // 清理進行中請求
                 inflightRequests.delete(dateKey);
             }
         }
-        
+
+        // stale-while-revalidate 載入策略 - 優化版本
         async function loadHomeworkWithSWR(dateKey) {
             const loadingDateKey = dateKey;
+            const startTime = performance.now();
             let hasRenderedStale = false;
+            let staleTime = 0;
             
+            // 1. 先嘗試快取 (stale) - 立即顯示
             let cacheItem = getFromMemoryCache(dateKey) || getFromLocalStorage(dateKey);
             
             if (cacheItem && cacheItem.data) {
+                // 檢查日期是否仍然正確
                 if (dateKeyISO(currentDate) === loadingDateKey) {
                     homeworkData = [...cacheItem.data];
                     renderAllHomework();
                     hasRenderedStale = true;
+                    staleTime = performance.now() - startTime;
                 }
             } else {
+                // 沒有快取時，先顯示載入狀態
                 homeworkData = [];
-                renderAllHomework(true); 
+                renderAllHomework(true); // 顯示載入動畫
             }
             
+            // 2. 背景重新驗證 (revalidate) - 使用更短的超時
             try {
                 const cloudResult = await Promise.race([
                     loadFromCloudWithCache(dateKey),
                     new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error('載入超時')), 12000) 
+                        setTimeout(() => reject(new Error('載入超時')), 12000) // 將超時從 5 秒延長至 12 秒，以容忍 GAS 的冷啟動延遲
                     )
                 ]);
                 
+                // 檢查日期是否在載入過程中被改變
                 if (dateKeyISO(currentDate) !== loadingDateKey) {
                     return;
                 }
                 
+                // 比較hash，決定是否需要更新
                 const needsUpdate = !cacheItem || 
                                   cacheItem.hash !== cloudResult.hash ||
                                   !hasRenderedStale;
@@ -1335,28 +1771,34 @@
                     homeworkData = [...cloudResult.data];
                     renderAllHomework();
                     
+                    // 只在有實際變更時才顯示通知
                     if (hasRenderedStale && cloudResult.fromCloud && 
                         JSON.stringify(cacheItem.data) !== JSON.stringify(cloudResult.data)) {
                         showNotification('資料已更新', 'success');
                     }
-                } 
+                }
                 
+                // 延遲預取鄰近日期，避免影響當前載入
                 if (cloudResult.fromCloud) {
                     setTimeout(() => prefetchAdjacentDays(dateKey), 500);
                 }
                 
             } catch (error) {
                 if (error.name === 'AbortError') {
-                    return; 
+                    return; // 被中斷，正常情況
                 }
                 
+                const isTimeout = error.message && error.message.includes('載入超時');
+                
+                // 如果沒有快取資料，顯示空狀態
                 if (!hasRenderedStale) {
                     homeworkData = [];
                     renderAllHomework();
                 }
             }
         }
-        
+
+        // 即時儲存作業 (帶快取更新)
         async function saveHomeworkInstantly() {
             if (isSaving) {
                 return { success: false, message: '正在儲存中' };
@@ -1367,6 +1809,7 @@
             try {
                 const dateKey = dateKeyISO(currentDate);
                 
+                // 轉換為舊格式以保持兼容性
                 const legacyData = homeworkData.map(hw => ({
                     text: hw.content,
                     subject: hw.subject,
@@ -1374,12 +1817,14 @@
                     timestamp: hw.timestamp
                 }));
                 
+                // 先寫入本地備份
                 try {
                     localStorage.setItem(dateKey, JSON.stringify(legacyData));
                 } catch (localError) {}
                 
                 const result = await saveToGoogleSheets(dateKey, legacyData);
                 
+                // 儲存成功後立即更新快取
                 if (result.success) {
                     const normalizedData = normalizeHomeworkData(legacyData);
                     writeToCache(dateKey, normalizedData);
@@ -1390,97 +1835,114 @@
                 isSaving = false;
             }
         }
-        
+
+        // 載入作業 (使用新的SWR策略)
         async function loadHomework() {
             const dateKey = dateKeyISO(currentDate);
             await loadHomeworkWithSWR(dateKey);
         }
-        
+
+        // 切換編輯模式
         async function toggleEditMode() {
             if (!editMode) {
                 showCustomPasswordDialog();
                 return;
             }
-        
+
+            // 退出編輯模式 - 儲存所有編輯中的作業為已確認狀態
             const editingHomework = homeworkData.filter(hw => hw.status === 'editing');
             editingHomework.forEach(hw => {
                 if (hw.content.trim()) {
-                    hw.status = 'confirmed'; 
+                    hw.status = 'confirmed'; // 改為已確認狀態
                 } else {
+                    // 刪除空內容的作業
                     const index = homeworkData.findIndex(h => h.id === hw.id);
                     if (index !== -1) {
                         homeworkData.splice(index, 1);
                     }
                 }
             });
-        
-            const savingDialog = showSavingDialog('正在儲存作業到雲端...');
+
+            const savingDialog = showSavingDialog('正在儲存更新到雲端...');
             setEditBtnBusy(true);
-        
+
             let saveResult;
             try {
+                // 併發儲存今日作業
                 saveResult = await saveHomeworkInstantly();
+                
+                // 若跑馬燈設定有修改，同步儲存至雲端全域設定
+                if (isGlobalEventsModified) {
+                    await saveGlobalEventsInstantly();
+                    isGlobalEventsModified = false;
+                }
             } catch (e) {
+                console.error('save flow threw:', e);
                 saveResult = { success: false, message: 'SAVE_FATAL: ' + (e?.message || e) };
             }
-        
+
             hideSavingDialog();
             setEditBtnBusy(false);
-        
+
             if (saveResult && saveResult.success) {
                 editMode = false;
                 updateEditModeUI();
                 
+                // 儲存成功後，等待2秒再重新載入以確保取得最新資料
                 showNotification(saveResult.message || '儲存完成，正在重新載入...', 'success');
                 setTimeout(async () => {
                     await loadHomework();
                     showNotification('資料已更新！', 'success');
                 }, 2000);
                 
-                renderAllHomework(); 
+                renderAllHomework(); // 重新渲染以隱藏編輯按鈕
             } else {
                 showNotification(saveResult?.message || '儲存失敗', 'error');
             }
         }
-        
+
+        // 更新編輯模式UI
         function updateEditModeUI() {
             const editIcon = document.getElementById('editIcon');
             const editText = document.getElementById('editText');
             const editModeBtn = document.getElementById('editModeBtn');
             const addHomeworkBtn = document.getElementById('addHomeworkBtn');
             const sortModeIndicator = document.getElementById('sortModeIndicator');
-        
-            if (!editIcon || !editText || !editModeBtn || !addHomeworkBtn) {
-                return;
-            }
-        
+            const marqueeEditSection = document.getElementById('marqueeEditSection');
+
+            if (!editIcon || !editText || !editModeBtn || !addHomeworkBtn) return;
+
             if (editMode) {
                 editIcon.textContent = '🔓';
                 editText.textContent = '退出編輯';
-                editModeBtn.className = 'group relative bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 flex items-center space-x-2';
-                editModeBtn.title = '退出編輯模式';
+                editModeBtn.className = 'group relative w-full sm:w-auto bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform sm:hover:scale-105 flex justify-center items-center space-x-2';
+                editModeBtn.title = '退出編輯模式並儲存';
                 addHomeworkBtn.style.display = 'flex';
                 
-                if (sortModeIndicator) {
-                    sortModeIndicator.style.display = 'block';
+                // 展開全域設定區與渲染
+                if (marqueeEditSection) {
+                    marqueeEditSection.style.display = 'block';
+                    renderGlobalEventsEditor();
                 }
                 
+                if (sortModeIndicator) sortModeIndicator.style.display = 'block';
                 stopBackgroundUpdate();
             } else {
                 editIcon.textContent = '🔐';
                 editText.textContent = '編輯模式';
-                editModeBtn.className = 'group relative bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 flex items-center space-x-2';
-                editModeBtn.title = '編輯作業';
+                editModeBtn.className = 'group relative w-full sm:w-auto bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform sm:hover:scale-105 flex justify-center items-center space-x-2';
+                editModeBtn.title = '進入編輯作業';
                 addHomeworkBtn.style.display = 'none';
                 
-                if (sortModeIndicator) {
-                    sortModeIndicator.style.display = 'none';
-                }
+                // 隱藏全域設定區
+                if (marqueeEditSection) marqueeEditSection.style.display = 'none';
                 
+                if (sortModeIndicator) sortModeIndicator.style.display = 'none';
                 startBackgroundUpdate();
             }
         }
-        
+
+        // 密碼驗證對話框
         function showCustomPasswordDialog() {
             const existingOverlay = document.querySelector('.password-dialog-overlay');
             if (existingOverlay) existingOverlay.remove();
@@ -1523,7 +1985,7 @@
                 if (e.target === overlay) cancelPasswordDialog();
             });
         }
-        
+
         async function confirmPassword() {
             const input = document.getElementById('customPasswordInput');
             const password = input ? input.value : '';
@@ -1535,7 +1997,7 @@
                 
                 if (overlay) overlay.remove();
                 showNotification('已進入編輯模式', 'success');
-                renderAllHomework(); 
+                renderAllHomework(); // 重新渲染以顯示編輯按鈕
             } else if (password !== '') {
                 showNotification('密碼錯誤！', 'error');
                 if (input) {
@@ -1544,12 +2006,13 @@
                 }
             }
         }
-        
+
         function cancelPasswordDialog() {
             const overlay = document.querySelector('.password-dialog-overlay');
             if (overlay) overlay.remove();
         }
-        
+
+        // 切換編輯按鈕忙碌狀態
         function setEditBtnBusy(busy) {
             const btn = document.getElementById('editModeBtn');
             if (!btn) return;
@@ -1559,20 +2022,24 @@
             if (content) content.classList.toggle('hidden', busy);
             if (spinner) spinner.classList.toggle('hidden', !busy);
         }
-        
+
+        // 強制重新載入作業 (清除快取)
         async function forceReloadHomework() {
             const dateKey = dateKeyISO(currentDate);
             
+            // 清除該日期的快取
             const cacheKey = getCacheKey(dateKey);
             memoryCache.delete(cacheKey);
             try {
                 localStorage.removeItem(cacheKey);
+                // 同時清除舊格式的備份
                 localStorage.removeItem(dateKey);
             } catch (e) {}
             
             showNotification('正在重新載入雲端資料...', 'success');
             
             try {
+                // 中斷當前載入
                 if (currentLoadController) {
                     currentLoadController.abort();
                 }
@@ -1582,70 +2049,121 @@
                 if (dateKeyISO(currentDate) === dateKey) {
                     homeworkData = [...cloudResult.data];
                     renderAllHomework();
+                    
+                    // 順便重載一次全域跑馬燈設定
+                    await loadGlobalEvents();
+                    
                     showNotification('資料已重新載入！', 'success');
                 }
             } catch (error) {
+                // 顯示空狀態，不顯示錯誤訊息
                 homeworkData = [];
                 renderAllHomework();
             }
         }
-        
+
+        // 導航鎖定狀態
         let navigationLocked = false;
-        const NAVIGATION_LOCK_DURATION = 300; 
-        
+        const NAVIGATION_LOCK_DURATION = 300; // 300ms 防抖
+
+        // 倒數日曆跑馬燈邏輯 (實踐過濾隱藏、並套用雙容器無縫循環)
         function updateCountdown(currentDayTime) {
-            const events = [
-                { name: '第一次定期評量 (4/16-17)', date: new Date(2026, 3, 16).getTime() },
-                { name: '全台學力檢測 (5/28)', date: new Date(2026, 4, 28).getTime() },
-                { name: '畢業班第二次定期評量 (6/1-5)', date: new Date(2026, 5, 1).getTime() },
-                { name: '校慶＆畢業典禮 (6/18)', date: new Date(2026, 5, 18).getTime() }
-            ];
-        
-            let upcomingEvent = null;
-            let remainingDays = 0;
-        
-            for (const event of events) {
-                if (event.date >= currentDayTime) {
-                    upcomingEvent = event;
-                    remainingDays = Math.floor((event.date - currentDayTime) / (1000 * 60 * 60 * 24));
-                    break;
-                }
-            }
-        
             const countdownMarquee = document.getElementById('countdownMarquee');
             const marqueeText = document.getElementById('marqueeText');
-        
-            if (upcomingEvent) {
-                countdownMarquee.style.display = 'flex';
-                let baseMsg = '';
-                if (remainingDays === 0) {
-                    baseMsg = `📢 🌟 提醒：【${upcomingEvent.name}】就是今天！祝大家順利！ 💪 🌟`;
-                } else {
-                    baseMsg = `📢 提醒：距離【${upcomingEvent.name}】還剩下 <span class="text-2xl text-red-500 font-black mx-2">${remainingDays}</span> 天！`;
+            
+            if (!globalEvents || globalEvents.length === 0) {
+                countdownMarquee.style.display = 'none';
+                return;
+            }
+
+            let marqueeMessages = [];
+            let futureCountdowns = [];
+
+            // 1. 分類收集「純文字訊息」與「未來的活動倒數」，並過濾掉未勾選的項目
+            for (const ev of globalEvents) {
+                if (ev.enabled === false) continue; // 過濾掉停用的項目
+
+                if (ev.type === 'message') {
+                    if (ev.content && ev.content.trim() !== '') {
+                        marqueeMessages.push(`📢 ${ev.content}`);
+                    }
+                } else if (ev.type === 'countdown') {
+                    if (!ev.date || !ev.name) continue;
+                    
+                    // 將 YYYY-MM-DD 轉換為時間戳 (以中午12點為準避免時區誤差)
+                    const [y, m, d] = ev.date.split('-');
+                    const evDate = new Date(parseInt(y), parseInt(m)-1, parseInt(d), 12, 0, 0).getTime();
+                    
+                    const stripTime = (t) => {
+                        const dt = new Date(t);
+                        return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+                    };
+                    
+                    const eventDayTime = stripTime(evDate);
+                    const todayTime = stripTime(currentDayTime);
+
+                    // 僅保留「未來」或「當天」的活動
+                    if (eventDayTime >= todayTime) {
+                        const remainingDays = Math.floor((eventDayTime - todayTime) / (1000 * 60 * 60 * 24));
+                        futureCountdowns.push({ event: ev, remainingDays: remainingDays, eventDayTime });
+                    }
                 }
+            }
+
+            // 2. 從所有未來活動中「僅取出距離最近的一場」
+            if (futureCountdowns.length > 0) {
+                // 依據時間先後排序，取第一筆
+                futureCountdowns.sort((a, b) => a.eventDayTime - b.eventDayTime);
+                const closest = futureCountdowns[0];
                 
-                const itemHTML = `<div class="flex items-center px-12">${baseMsg}</div>`;
-                marqueeText.innerHTML = Array(10).fill(itemHTML).join('');
+                if (closest.remainingDays === 0) {
+                    marqueeMessages.push(`📢 🌟 提醒：【${closest.event.name}】就是今天！祝大家順利！ 💪 🌟`);
+                } else {
+                    marqueeMessages.push(`📢 提醒：距離【${closest.event.name}】還剩下 <span class="text-2xl text-red-500 font-black mx-2">${closest.remainingDays}</span> 天！`);
+                }
+            }
+
+            // 3. 輸出至畫面並套用雙容器無縫銜接與速度
+            if (marqueeMessages.length > 0) {
+                countdownMarquee.style.display = 'flex';
+                
+                // 以視覺分隔符串聯所有訊息，並確保結尾也有分隔符銜接下一組
+                const baseMsg = marqueeMessages.join('<span class="mx-8 text-yellow-400 font-normal">|</span>') + '<span class="mx-8 text-yellow-400 font-normal">|</span>';
+                
+                const speed = globalConfig.marqueeSpeed || 40;
+                
+                // 雙容器無縫法：放入兩個完全相等的內容，配合 CSS translateX(-50%) 達到完美循環
+                const groupHTML = `<div class="marquee-item-group">${baseMsg}</div>`;
+                
+                marqueeText.className = 'marquee-content text-base sm:text-lg font-bold text-yellow-800';
+                marqueeText.style.animationDuration = `${speed}s`;
+                marqueeText.innerHTML = groupHTML + groupHTML;
+                
             } else {
-                countdownMarquee.style.display = 'none'; 
+                countdownMarquee.style.display = 'none';
             }
         }
-        
+
+        // 日期相關函數 - 優化版本
         function updateDateDisplaySync() {
+            const startTime = performance.now();
+            
             const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
             
             let semesterInfo = '';
             let weekNumber = 1;
             
+            // 消除時間差異，只比較日期
             const stripTime = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
             const currentDayTime = stripTime(currentDate);
             const s1Start = stripTime(firstSemesterStart);
             const s1End = stripTime(firstSemesterEnd);
             const s2Start = stripTime(secondSemesterStart);
             const s2End = stripTime(secondSemesterEnd);
-        
+
             if (currentDayTime >= s1Start && currentDayTime <= s1End) {
                 semesterInfo = '114學年第一學期';
+                // 第一學期第1週的基準日：2025-08-31 (星期日)
                 const baseDate = new Date(2025, 7, 31).getTime(); 
                 const diffDays = Math.floor((currentDayTime - baseDate) / (1000 * 60 * 60 * 24));
                 weekNumber = Math.floor(diffDays / 7) + 1;
@@ -1653,6 +2171,7 @@
                 if (weekNumber < 1) weekNumber = 1;
             } else if (currentDayTime >= s2Start && currentDayTime <= s2End) {
                 semesterInfo = '114學年第二學期';
+                // 第二學期第1週的基準日：2026-02-08 (星期日) - 使 2/22~2/28 準確成為第3週
                 const baseDate = new Date(2026, 1, 8).getTime(); 
                 const diffDays = Math.floor((currentDayTime - baseDate) / (1000 * 60 * 60 * 24));
                 weekNumber = Math.floor(diffDays / 7) + 1;
@@ -1674,23 +2193,31 @@
             const date = currentDate.getDate();
             const weekday = weekdays[currentDate.getDay()];
             
+            // 立即更新UI，不等待載入
             document.getElementById('semesterInfo').textContent = semesterInfo;
             document.getElementById('weekInfo').textContent = `第${weekNumber}週`;
             document.getElementById('dateOnly').textContent = `${year}年${month}月${date}日`;
             document.getElementById('weekdayOnly').textContent = weekday;
             
+            // 更新跑馬燈預覽
             updateCountdown(currentDayTime);
         }
-        
+
         function updateDateDisplay() {
+            // 立即更新日期顯示
             updateDateDisplaySync();
             
+            // 使用 requestAnimationFrame 確保 UI 先更新
             requestAnimationFrame(() => {
-                loadHomework().catch(error => {});
+                // 非同步載入作業，不阻塞 UI
+                loadHomework().catch(error => {
+                    console.error('載入作業失敗:', error);
+                });
             });
         }
-        
+
         function previousDay() {
+            // 導航防抖鎖定
             if (navigationLocked) return;
             navigationLocked = true;
             setTimeout(() => { navigationLocked = false; }, NAVIGATION_LOCK_DURATION);
@@ -1706,8 +2233,9 @@
             
             updateDateDisplay();
         }
-        
+
         function nextDay() {
+            // 導航防抖鎖定
             if (navigationLocked) return;
             navigationLocked = true;
             setTimeout(() => { navigationLocked = false; }, NAVIGATION_LOCK_DURATION);
@@ -1723,8 +2251,9 @@
             
             updateDateDisplay();
         }
-        
+
         function today() {
+            // 導航防抖鎖定
             if (navigationLocked) return;
             navigationLocked = true;
             setTimeout(() => { navigationLocked = false; }, NAVIGATION_LOCK_DURATION);
@@ -1732,7 +2261,54 @@
             currentDate = new Date();
             updateDateDisplay();
         }
-        
+
+        // 清理快取 (版本更新時使用)
+        function clearAllCache() {
+            console.log('🧹 清理所有快取...');
+            
+            // 清理記憶體快取
+            memoryCache.clear();
+            
+            // 清理localStorage中的作業快取
+            try {
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith(`hw:${CACHE_CONFIG.CLASS_ID}:`)) {
+                        keysToRemove.push(key);
+                    }
+                }
+                keysToRemove.forEach(key => localStorage.removeItem(key));
+                console.log(`清理了 ${keysToRemove.length} 個快取項目`);
+            } catch (error) {
+                console.error('清理localStorage失敗:', error);
+            }
+        }
+
+        // 快取統計
+        function getCacheStats() {
+            const memoryCount = memoryCache.size;
+            let localStorageCount = 0;
+            
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith(`hw:${CACHE_CONFIG.CLASS_ID}:`)) {
+                        localStorageCount++;
+                    }
+                }
+            } catch (error) {
+                console.error('統計localStorage失敗:', error);
+            }
+            
+            return {
+                memory: memoryCount,
+                localStorage: localStorageCount,
+                inflightRequests: inflightRequests.size
+            };
+        }
+
+        // 搬遷舊版快取到新版格式
         function migrateLegacyCache() {
             try {
                 let migratedCount = 0;
@@ -1742,6 +2318,7 @@
                     const key = localStorage.key(i);
                     if (!key) continue;
                     
+                    // 檢查是否為舊版日期格式 (YYYY-MM-DD)
                     if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
                         try {
                             const legacyData = localStorage.getItem(key);
@@ -1749,48 +2326,70 @@
                                 const parsed = JSON.parse(legacyData);
                                 const normalizedData = normalizeHomeworkData(parsed);
                                 
+                                // 寫入新版快取格式
                                 writeToCache(key, normalizedData);
                                 keysToRemove.push(key);
                                 migratedCount++;
                             }
                         } catch (e) {
+                            // 無效的舊版資料，直接刪除
                             keysToRemove.push(key);
                         }
                     }
                 }
                 
+                // 清理舊版快取
                 keysToRemove.forEach(key => localStorage.removeItem(key));
             } catch (error) {}
         }
-        
+
+        // 初始化
         async function init() {
+            // 搬遷舊版快取
             migrateLegacyCache();
+            // 清理過期快取
             cleanExpiredCache();
             
             currentDate = new Date();
+            
+            // 先發起當日作業讀取與畫面渲染
             updateDateDisplay();
             
+            // 非同步發起全域跑馬燈設定的抓取（不阻塞 UI）
+            loadGlobalEvents();
+            
+            // 啟動背景更新
             startBackgroundUpdate();
             
+            // 監聽頁面可見性變化
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible' && !editMode) {
+                    // 頁面重新可見時，立即檢查更新
                     setTimeout(performBackgroundUpdate, 1000);
                 }
             });
         }
-        
+
+        // 頁面載入完成後初始化
         window.addEventListener('load', () => {
             init();
         });
-        
+
+        // 頁面卸載時清理
         window.addEventListener('beforeunload', () => {
+            // 中斷所有進行中的請求
             if (currentLoadController) {
                 currentLoadController.abort();
             }
+            
+            // 清理進行中請求
             inflightRequests.clear();
+            
+            // 停止背景更新
             stopBackgroundUpdate();
         });
-        
+
+        // 顯示日期選擇器
         function showDatePicker() {
             const existingOverlay = document.querySelector('.date-picker-overlay');
             if (existingOverlay) existingOverlay.remove();
@@ -1801,6 +2400,7 @@
             const dialog = document.createElement('div');
             dialog.className = 'date-picker-dialog';
             
+            // 格式化當前日期為 YYYY-MM-DD
             const currentDateStr = currentDate.toISOString().split('T')[0];
             
             dialog.innerHTML = `
@@ -1824,6 +2424,7 @@
             overlay.appendChild(dialog);
             document.body.appendChild(overlay);
             
+            // 聚焦到日期輸入框
             setTimeout(() => {
                 const input = document.getElementById('datePickerInput');
                 if (input) {
@@ -1834,11 +2435,13 @@
                 }
             }, 100);
             
+            // 點擊背景關閉
             overlay.addEventListener('click', function(e) {
                 if (e.target === overlay) cancelDatePicker();
             });
         }
-        
+
+        // 確認日期選擇
         async function confirmDatePicker() {
             const input = document.getElementById('datePickerInput');
             const overlay = document.querySelector('.date-picker-overlay');
@@ -1850,11 +2453,13 @@
             
             const selectedDate = new Date(input.value + 'T12:00:00');
             
+            // 檢查日期範圍
             if (selectedDate < firstSemesterStart || selectedDate > secondSemesterEnd) {
                 showNotification('所選日期超出學期範圍！', 'warning');
                 return;
             }
             
+            // 檢查是否為週末
             if (selectedDate.getDay() === 0 || selectedDate.getDay() === 6) {
                 showNotification('週末沒有上課，請選擇平日！', 'warning');
                 return;
@@ -1866,11 +2471,21 @@
             showNotification('正在載入所選日期...', 'success');
             await updateDateDisplay();
         }
-        
+
+        // 取消日期選擇
         function cancelDatePicker() {
             const overlay = document.querySelector('.date-picker-overlay');
             if (overlay) overlay.remove();
         }
+
+        // 開發者工具 (在console中可用)
+        window.homeworkDebug = {
+            clearCache: clearAllCache,
+            getCacheStats: getCacheStats,
+            getMemoryCache: () => memoryCache,
+            getInflightRequests: () => inflightRequests,
+            config: CACHE_CONFIG
+        };
     </script>
 </body>
 </html>
