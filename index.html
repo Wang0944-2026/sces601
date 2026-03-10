@@ -327,6 +327,7 @@
                         </div>
                         <div class="flex items-center gap-3 w-full sm:w-auto">
                             <span class="text-sm text-yellow-600 font-medium">快</span>
+                            <!-- 嚴格限制：滑桿最低150，最高400，預設200 -->
                             <input type="range" min="150" max="400" value="200" id="marqueeSpeedSlider" class="w-full sm:w-32 h-2 bg-yellow-200 rounded-lg appearance-none cursor-pointer" oninput="updateMarqueeSpeed(this.value)">
                             <span class="text-sm text-yellow-600 font-medium">慢</span>
                             <span id="speedValueDisplay" class="text-sm font-bold text-yellow-700 w-8 text-right">200s</span>
@@ -358,7 +359,7 @@
         let homeworkData = []; // 統一的作業數據存儲
         
         // 全域跑馬燈設定與狀態 (加入預設 enabled 狀態)
-        let globalConfig = { marqueeSpeed: 200 }; // 預設速度改為200秒
+        let globalConfig = { marqueeSpeed: 200 }; // 預設速度嚴格控制在 200秒
         let globalEvents = [
             { id: 'e1', type: 'countdown', name: '第一次定期評量 (4/16-17)', date: '2026-04-16', enabled: true },
             { id: 'e2', type: 'countdown', name: '全台學力檢測 (5/28)', date: '2026-05-28', enabled: true },
@@ -1386,13 +1387,21 @@
                         globalEvents = parsedEvents;
                     }
                     
-                    // 解析 Config (跑馬燈速度等)
+                    // 解析 Config (跑馬燈速度等) 並加入嚴格的邊界防護
                     const configItem = cloudResult.data.find(item => item.subject === 'SYS_CONFIG');
                     if (configItem) {
                         try {
                             const loadedConfig = JSON.parse(configItem.content);
                             if (loadedConfig && loadedConfig.marqueeSpeed) {
-                                globalConfig.marqueeSpeed = loadedConfig.marqueeSpeed;
+                                let loadedSpeed = parseInt(loadedConfig.marqueeSpeed, 10);
+                                // 嚴格控制：如果讀取到舊版速度(例如 40 或 60)，強制拉回合理的 150~400 範圍，預設為 200
+                                if (isNaN(loadedSpeed) || loadedSpeed < 150) {
+                                    globalConfig.marqueeSpeed = 200;
+                                } else if (loadedSpeed > 400) {
+                                    globalConfig.marqueeSpeed = 400;
+                                } else {
+                                    globalConfig.marqueeSpeed = loadedSpeed;
+                                }
                             }
                         } catch(e) {}
                     }
@@ -2137,7 +2146,8 @@
                 // 這樣在進行 translateX(-50%) 時，右側絕對不會露出空白背景，達成完美 Ticker Tape 效果。
                 const repeatedMsg = Array(20).fill(baseMsg).join('');
                 
-                const speed = globalConfig.marqueeSpeed || 200;
+                // 【防護機制】：確保套用的速度嚴格落在 150 到 400 之間
+                const speed = Math.max(150, Math.min(400, globalConfig.marqueeSpeed || 200));
                 
                 // 雙容器無縫法：放入兩個完全相等的極長內容，配合 CSS translateX(-50%) 達到完美循環
                 const groupHTML = `<div class="marquee-item-group">${repeatedMsg}</div>`;
