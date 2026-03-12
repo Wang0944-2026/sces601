@@ -383,7 +383,6 @@
         }
 
         function calculateStableHash(rawData) {
-            // 防呆：如果傳入的是字串格式的 JSON，先將其解析為陣列
             if (typeof rawData === 'string') {
                 try { rawData = JSON.parse(rawData); } catch (e) { return 'empty'; }
             }
@@ -419,7 +418,6 @@
         }
 
         function normalizeHomeworkData(rawData) {
-            // 防呆：如果傳入的是字串格式的 JSON，先將其解析為陣列
             if (typeof rawData === 'string') {
                 try { rawData = JSON.parse(rawData); } catch (e) { return []; }
             }
@@ -813,7 +811,7 @@
                 
                 const result = await response.json();
                 if (result.success && result.data) {
-                    const parsedData = JSON.parse(result.data);
+                    const parsedData = typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
                     if (parsedData.events) globalEvents = parsedData.events;
                     if (parsedData.config) {
                         globalConfig = parsedData.config;
@@ -882,8 +880,19 @@
                 const response = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData, cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 
-                const result = await response.json();
-                if (result.success) return { success: true, message: '作業已成功儲存' };
+                const responseText = await response.text();
+                let result;
+                try {
+                    result = JSON.parse(responseText);
+                } catch (e) {
+                    if (responseText.toLowerCase().includes('success')) {
+                        result = { success: true };
+                    } else {
+                        throw new Error('伺服器回傳格式錯誤');
+                    }
+                }
+                
+                if (result.success || result.status === 'success') return { success: true, message: '作業已成功儲存' };
                 else throw new Error(result.error || '儲存失敗');
             } catch (e) { return { success: false, message: e.message }; }
         }
@@ -908,7 +917,6 @@
                     if (result.success || result.data) {
                         let rawData = result.data || [];
                         
-                        // 【關鍵修復】: 將從雲端取回的字串資料正確解析回陣列
                         if (typeof rawData === 'string') {
                             try { rawData = JSON.parse(rawData); } catch (e) { rawData = []; }
                         }
@@ -1090,12 +1098,29 @@
             if (msgs.length > 0) {
                 countdownMarquee.style.display = 'flex';
                 const baseMsg = msgs.join('<span class="mx-8 text-yellow-400 font-normal">|</span>') + '<span class="mx-8 text-yellow-400 font-normal">|</span>';
-                const repeatedMsg = Array(20).fill(baseMsg).join('');
-                const speed = Math.max(150, Math.min(400, globalConfig.marqueeSpeed || 200));
                 
+                // --- 核心優化：恆定跑馬燈物理速度 ---
+                // 計算去除 HTML 標籤後的純文字長度
+                const rawText = baseMsg.replace(/<[^>]*>?/gm, '');
+                const charCount = rawText.length || 1;
+                
+                const copies = 20; // 產生 20 份以確保無縫
+                const crossedCopies = copies / 2; // 動畫 translateX(-50%) 實際上會完整走過 10 份
+                const totalCrossedChars = charCount * crossedCopies;
+                
+                // 取得使用者設定的秒數 (預設 200)
+                const speedSetting = Math.max(150, Math.min(400, globalConfig.marqueeSpeed || 200));
+                
+                // 建立基準比例：假設 300 個字元大約對應使用者設定的秒數
+                // 這樣一來，不論文字多長，都會按比例延長時間，確保「移動速度恆定」不暴衝！
+                const referenceChars = 300;
+                const calculatedDuration = (totalCrossedChars / referenceChars) * speedSetting;
+
+                const repeatedMsg = Array(copies).fill(baseMsg).join('');
                 const groupHTML = `<div class="marquee-item-group">${repeatedMsg}</div>`;
+                
                 marqueeText.className = 'marquee-content text-base sm:text-lg font-bold text-yellow-800';
-                marqueeText.style.animationDuration = `${speed}s`;
+                marqueeText.style.animationDuration = `${calculatedDuration}s`;
                 marqueeText.innerHTML = groupHTML + groupHTML;
             } else { countdownMarquee.style.display = 'none'; }
         }
