@@ -170,7 +170,10 @@
     <div class="max-w-4xl mx-auto">
         <!-- 標題與頂部資訊 -->
         <div class="mb-4 text-center">
-            <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold text-indigo-800 mb-2 md:mb-3">📚 上岐國小601聯絡簿</h1>
+            <h1 class="flex items-center justify-center text-2xl sm:text-3xl md:text-4xl font-bold text-indigo-800 mb-2 md:mb-3">
+                <img src="上岐國小_校徽_202409_彩色.jpg" alt="上岐校徽" class="h-8 w-8 sm:h-10 sm:w-10 md:h-12 md:w-12 mr-2 object-contain" onerror="this.onerror=null; this.outerHTML='<span class=\'mr-2\'>📚</span>';">
+                上岐國小601聯絡簿
+            </h1>
             <div class="text-sm sm:text-base md:text-lg font-medium flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap" id="dateInfo">
                 <span class="bg-red-100 text-red-800 px-2 sm:px-3 py-1 rounded-full" id="semesterInfo">114學年第一學期</span>
                 <span class="bg-blue-100 text-blue-800 px-2 sm:px-3 py-1 rounded-full" id="weekInfo">第1週</span>
@@ -627,7 +630,7 @@
             
             if (editMode) {
                 item.classList.add('sortable-item');
-                item.draggable = true;
+                // 移除原有的固定 draggable = true，改由按住手把時動態觸發
                 item.addEventListener('dragstart', handleDragStart);
                 item.addEventListener('dragend', handleDragEnd);
                 item.addEventListener('dragover', handleDragOver);
@@ -635,7 +638,8 @@
             }
             
             let displayText = homework.subject === '其它' ? `${sequenceNumber}. ${homework.content}` : `${sequenceNumber}. ${{'國語':'國','數學':'數','社會':'社','自然':'自'}[homework.subject] || homework.subject}${homework.content}`;
-            const dragHandle = editMode ? `<div class="drag-handle mr-2 sm:mr-3 text-xl sm:text-2xl cursor-grab hover:cursor-grabbing select-none shrink-0" draggable="false">⋮⋮</div>` : '';
+            // 替手把加入 onmousedown 與 ontouchstart 事件，僅在按住把手時允許拖曳
+            const dragHandle = editMode ? `<div class="drag-handle mr-2 sm:mr-3 text-xl sm:text-2xl cursor-grab hover:cursor-grabbing select-none shrink-0" draggable="false" onmousedown="this.closest('.sortable-item').setAttribute('draggable', 'true')" ontouchstart="this.closest('.sortable-item').setAttribute('draggable', 'true')">⋮⋮</div>` : '';
             
             item.innerHTML = `
                 <div class="flex items-center justify-between">
@@ -663,7 +667,10 @@
             e.dataTransfer.setData('text/plain', draggedHomeworkId);
         }
         function handleDragEnd(e) {
-            if (draggedElement) draggedElement.classList.remove('dragging');
+            if (draggedElement) {
+                draggedElement.classList.remove('dragging');
+                draggedElement.setAttribute('draggable', 'false'); // 拖曳結束後關閉拖曳屬性，恢復輸入框正常的選字功能
+            }
             document.querySelectorAll('.sortable-item').forEach(i => i.classList.remove('drag-over'));
             draggedElement = null; draggedHomeworkId = null;
         }
@@ -709,7 +716,10 @@
             e.dataTransfer.setData('text/plain', draggedGlobalEventId);
         }
         function handleGlobalDragEnd(e) {
-            if (draggedGlobalElement) draggedGlobalElement.classList.remove('dragging');
+            if (draggedGlobalElement) {
+                draggedGlobalElement.classList.remove('dragging');
+                draggedGlobalElement.setAttribute('draggable', 'false'); // 拖曳結束後關閉拖曳屬性，恢復輸入框正常的選字功能
+            }
             document.querySelectorAll('.global-sortable-item').forEach(i => i.classList.remove('drag-over'));
             draggedGlobalElement = null;
             draggedGlobalEventId = null;
@@ -814,10 +824,11 @@
                        <input type="date" value="${ev.date || ''}" onchange="updateGlobalEventField('${ev.id}', 'date', this)" class="bg-white w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2">`
                     : `<input type="text" value="${ev.content || ''}" placeholder="輸入跑馬燈宣導訊息..." oninput="updateGlobalEventField('${ev.id}', 'content', this)" class="flex-1 w-full bg-white border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2">`;
                 
+                // 移除外層容器固定的 draggable="true"，並在拖曳把手加入動態開啟拖曳屬性的事件
                 return `
-                <div class="global-sortable-item bg-yellow-50 rounded-xl p-3 sm:p-4 border border-yellow-200 shadow-sm flex flex-col sm:flex-row gap-3 items-start sm:items-center transition-opacity ${isChecked ? '' : 'opacity-50'}" data-event-id="${ev.id}" draggable="true">
+                <div class="global-sortable-item bg-yellow-50 rounded-xl p-3 sm:p-4 border border-yellow-200 shadow-sm flex flex-col sm:flex-row gap-3 items-start sm:items-center transition-opacity ${isChecked ? '' : 'opacity-50'}" data-event-id="${ev.id}">
                     <div class="flex items-center shrink-0 w-full sm:w-auto">
-                        <div class="global-drag-handle mr-2 sm:mr-3 text-xl sm:text-2xl cursor-grab hover:cursor-grabbing select-none shrink-0" draggable="false" title="按住拖曳以排序">⋮⋮</div>
+                        <div class="global-drag-handle mr-2 sm:mr-3 text-xl sm:text-2xl cursor-grab hover:cursor-grabbing select-none shrink-0" draggable="false" title="按住拖曳以排序" onmousedown="this.closest('.global-sortable-item').setAttribute('draggable', 'true')" ontouchstart="this.closest('.global-sortable-item').setAttribute('draggable', 'true')">⋮⋮</div>
                         <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="updateGlobalEventField('${ev.id}', 'enabled', this)" class="w-5 h-5 text-yellow-600 rounded cursor-pointer mr-2 sm:mr-0">
                     </div>
                     ${typeHtml}
