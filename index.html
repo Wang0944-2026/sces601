@@ -462,7 +462,7 @@
             }).filter(Boolean);
         }
 
-        // 背景更新與比對邏輯 (升級版：包含作業與跑馬燈)
+        // 背景更新與比對邏輯
         async function performBackgroundUpdate() {
             if (isBackgroundUpdating || editMode) return;
             const now = Date.now();
@@ -1002,7 +1002,7 @@
             
             const loadPromise = (async () => {
                 let controller = new AbortController();
-                let timeoutId = setTimeout(() => controller.abort(), 15000);
+                let timeoutId = setTimeout(() => controller.abort(), 15000); // 維持原生網路最大容忍 15 秒
                 if (!isPrefetch) {
                     showSyncStatus(true, '載入中...');
                     if (currentLoadController) currentLoadController.abort();
@@ -1027,12 +1027,13 @@
                         return { data: normalizedData, hash, fromCloud: true };
                     } else throw new Error(result.error || '載入失敗');
                 } catch (e) {
-                    if (e.name === 'AbortError') throw e;
+                    if (e.name === 'AbortError') throw e; // 傳遞中斷錯誤
                     try {
                         const legacy = localStorage.getItem(dateKey);
                         if (legacy) return { data: normalizeHomeworkData(JSON.parse(legacy)), hash: null, fromCloud: false };
                     } catch (lErr) {}
-                    return { data: [], hash: null, fromCloud: false };
+                    // 【修復】不要回傳假的空陣列覆蓋快取，將實體錯誤往上層拋出
+                    throw e; 
                 } finally {
                     clearTimeout(timeoutId);
                     if (!isPrefetch) {
@@ -1053,16 +1054,16 @@
             } else { homeworkData = []; renderAllHomework(true); }
             
             try {
-                const cloudResult = await Promise.race([
-                    loadFromCloudWithCache(dateKey),
-                    new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 12000))
-                ]);
-                if (dateKeyISO(currentDate) !== dateKey) return;
+                // 【修復】移除 12 秒強制 Promise.race，避免因 GAS 冷啟動較慢導致前端提早判定失敗並丟失真實資料
+                const cloudResult = await loadFromCloudWithCache(dateKey);
+                if (dateKeyISO(currentDate) !== dateKey) return; // 確保異步回來後，使用者還留在同一天
                 
                 if ((!cacheItem || cacheItem.hash !== cloudResult.hash) && cloudResult.data !== undefined) {
                     homeworkData = [...cloudResult.data]; renderAllHomework();
                 }
             } catch (e) {
+                // 【修復】防止被 Abort 的舊請求清除當前畫面的載入狀態
+                if (dateKeyISO(currentDate) !== dateKey) return; 
                 if (!cacheItem) { homeworkData = []; renderAllHomework(); }
             }
         }
@@ -1169,7 +1170,12 @@
                     await loadGlobalEvents(); 
                     showNotification('資料已重新載入！', 'success');
                 }
-            } catch (e) { homeworkData = []; renderAllHomework(); }
+            } catch (e) { 
+                if (e.name !== 'AbortError') showNotification('載入失敗，請稍後重試', 'error');
+                if (dateKeyISO(currentDate) === dateKey) {
+                    homeworkData = []; renderAllHomework(); 
+                }
+            }
         }
 
         function updateCountdown(currentDayTime) {
@@ -1198,7 +1204,6 @@
                 countdownMarquee.style.display = 'flex';
                 const baseMsg = msgs.join('<span class="mx-8 text-yellow-400 font-normal">|</span>') + '<span class="mx-8 text-yellow-400 font-normal">|</span>';
                 
-                // --- 核心優化：恆定跑馬燈物理速度 ---
                 const rawText = baseMsg.replace(/<[^>]*>?/gm, '');
                 const charCount = rawText.length || 1;
                 
