@@ -168,6 +168,7 @@
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-2 sm:p-4">
     <div class="max-w-4xl mx-auto">
+        <!-- 標題與頂部資訊 -->
         <div class="mb-4 text-center">
             <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold text-indigo-800 mb-2 md:mb-3">📚 上岐國小601聯絡簿</h1>
             <div class="text-sm sm:text-base md:text-lg font-medium flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap" id="dateInfo">
@@ -177,6 +178,7 @@
                 <span class="bg-purple-100 text-purple-800 px-2 sm:px-3 py-1 rounded-full" id="weekdayOnly">星期二</span>
             </div>
             
+            <!-- 日期控制按鈕 -->
             <div class="flex flex-wrap gap-2 sm:gap-3 justify-center mt-4">
                 <button onclick="previousDay()" class="group relative bg-gradient-to-r from-slate-500 to-slate-600 hover:from-slate-600 hover:to-slate-700 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl flex items-center space-x-1 sm:space-x-2 text-sm sm:text-base">
                     <span class="text-base sm:text-lg group-hover:animate-pulse">⬅️</span>
@@ -196,13 +198,18 @@
             </div>
         </div>
 
+        <!-- 跑馬燈倒數日曆 -->
         <div id="countdownMarquee" style="display: none;" class="max-w-4xl mx-auto mt-2 mb-4 bg-yellow-50 border-2 border-yellow-200 rounded-xl shadow-sm py-1.5 px-2 sm:px-4 marquee-wrapper cursor-default" title="將滑鼠移至上方可暫停跑馬燈">
             <div class="text-base sm:text-lg font-bold text-yellow-800 w-full flex" id="marqueeText">
-                </div>
+                <!-- 跑馬燈內容會由 JS 動態寫入並套用速度設定 -->
+            </div>
         </div>
 
+        <!-- 聯絡簿卡片 -->
         <div class="bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8 mb-6">
+            <!-- 今日作業區域 -->
             <div class="mb-4 sm:mb-8">
+                <!-- 控制列 -->
                 <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
                     <div class="flex items-center flex-wrap gap-2">
                         <span class="text-xl sm:text-2xl shrink-0">📝</span>
@@ -217,6 +224,7 @@
                             <span>重新載入</span>
                         </button>
                     </div>
+                    <!-- 編輯模式按鈕 -->
                     <button id="editModeBtn" onclick="toggleEditMode()" class="w-full sm:w-auto relative group bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform sm:hover:scale-105 flex justify-center items-center space-x-2" title="編輯作業">
                         <span data-role="btn-content" class="inline-flex items-center gap-2">
                             <span id="editIcon" class="text-lg">🔐</span>
@@ -230,6 +238,7 @@
                     </button>
                 </div>
                 
+                <!-- 作業列表容器 -->
                 <div id="homeworkContainer" class="space-y-4">
                     <div id="sortModeIndicator" class="sort-mode-indicator" style="display: none;">
                         🔄 拖拽排序模式：拖動作業項目來調整順序
@@ -264,6 +273,7 @@
                     <span class="text-xl mr-2">➕</span> 新增作業
                 </button>
                 
+                <!-- 全域跑馬燈設定區塊 -->
                 <div id="marqueeEditSection" class="mt-8 pt-6 border-t-2 border-gray-100" style="display: none;">
                     <div class="flex items-center mb-4">
                         <span class="text-xl sm:text-2xl shrink-0 mr-2">📢</span>
@@ -505,10 +515,7 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center space-x-2">
                         <span class="text-2xl">🔄</span>
-                        <div>
-                            <div class="font-bold text-base">資料已有更新</div>
-                            <div class="text-sm">請重整畫面</div>
-                        </div>
+                        <div class="font-bold text-sm sm:text-base">資料已有更新，請重整畫面</div>
                     </div>
                     <button onclick="applyBackgroundUpdate()" class="ml-3 shrink-0 whitespace-nowrap bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors">重整畫面</button>
                 </div>
