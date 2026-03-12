@@ -353,6 +353,31 @@
         let isBackgroundUpdating = false;
         let lastBackgroundUpdate = 0;
 
+        // ================= 安全 JSON 解析器 (修復換行與格式化錯誤) =================
+        function safeJSONParse(data, defaultFallback = []) {
+            if (!data) return defaultFallback;
+            let parsed = data;
+            let attempts = 0;
+            // 處理被多次 stringify 或格式微偏的資料
+            while (typeof parsed === 'string' && attempts < 3) {
+                try {
+                    parsed = JSON.parse(parsed);
+                } catch (e) {
+                    try {
+                        // 替換掉可能導致崩潰的不可見字元與未跳脫的換行
+                        let sanitized = parsed.replace(/[\n\r\t]/g, ' ');
+                        parsed = JSON.parse(sanitized);
+                    } catch (e2) {
+                        console.warn('資料格式異常無法解析:', parsed);
+                        break; // 跳出迴圈，會回傳 defaultFallback
+                    }
+                }
+                attempts++;
+            }
+            // 確保回傳值符合預期的陣列或物件結構
+            return (parsed !== null && typeof parsed === 'object') ? parsed : defaultFallback;
+        }
+
         class CacheItem {
             constructor(data, hash = null) {
                 this.data = data;
@@ -409,11 +434,10 @@
         }
 
         function calculateStableHash(rawData) {
-            if (typeof rawData === 'string') {
-                try { rawData = JSON.parse(rawData); } catch (e) { return 'empty'; }
-            }
-            if (!rawData || !Array.isArray(rawData)) return 'empty';
-            const stableContent = rawData.map(item => {
+            const parsedData = safeJSONParse(rawData, []);
+            if (!Array.isArray(parsedData) || parsedData.length === 0) return 'empty';
+            
+            const stableContent = parsedData.map(item => {
                 if (typeof item === 'string') return { content: item.trim(), subject: '國語', status: 'confirmed' };
                 else if (item && typeof item === 'object') {
                     return {
@@ -444,11 +468,10 @@
         }
 
         function normalizeHomeworkData(rawData) {
-            if (typeof rawData === 'string') {
-                try { rawData = JSON.parse(rawData); } catch (e) { return []; }
-            }
-            if (!rawData || !Array.isArray(rawData)) return [];
-            return rawData.map((item, index) => {
+            const parsedData = safeJSONParse(rawData, []);
+            if (!Array.isArray(parsedData)) return [];
+            
+            return parsedData.map((item, index) => {
                 let content = '', subject = '國語', status = 'confirmed', timestamp = null;
                 if (typeof item === 'string') content = item.trim();
                 else if (item && typeof item === 'object') {
@@ -541,11 +564,13 @@
             if (backgroundUpdateTimer) { clearInterval(backgroundUpdateTimer); backgroundUpdateTimer = null; }
         }
 
+        // ================= 強化防呆的日期轉換 (確保強制 YYYY-MM-DD 補零) =================
         function dateKeyISO(d) {
-            const taipeiDate = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+            // 使用 en-US 可避免部分瀏覽器在 zh-TW 語系中不會將月份與日期正確補零的問題
+            const taipeiDate = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(d);
             const year = taipeiDate.find(p => p.type === 'year').value;
-            const month = taipeiDate.find(p => p.type === 'month').value;
-            const day = taipeiDate.find(p => p.type === 'day').value;
+            const month = taipeiDate.find(p => p.type === 'month').value.padStart(2, '0');
+            const day = taipeiDate.find(p => p.type === 'day').value.padStart(2, '0');
             return `${year}-${month}-${day}`;
         }
 
@@ -908,7 +933,7 @@
                 
                 const result = await response.json();
                 if (result.success && result.data) {
-                    const parsedData = typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
+                    const parsedData = safeJSONParse(result.data, {});
                     // 記錄最新雲端字串供背景比對
                     currentGlobalDataString = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
 
@@ -1016,11 +1041,6 @@
                     const result = await response.json();
                     if (result.success || result.data) {
                         let rawData = result.data || [];
-                        
-                        if (typeof rawData === 'string') {
-                            try { rawData = JSON.parse(rawData); } catch (e) { rawData = []; }
-                        }
-                        
                         const normalizedData = normalizeHomeworkData(rawData);
                         const hash = result.hash || calculateStableHash(rawData);
                         writeToCache(dateKey, normalizedData, hash);
@@ -1032,7 +1052,7 @@
                         const legacy = localStorage.getItem(dateKey);
                         if (legacy) return { data: normalizeHomeworkData(JSON.parse(legacy)), hash: null, fromCloud: false };
                     } catch (lErr) {}
-                    // 【修復】不要回傳假的空陣列覆蓋快取，將實體錯誤往上層拋出
+                    // 將實體錯誤往上層拋出
                     throw e; 
                 } finally {
                     clearTimeout(timeoutId);
@@ -1054,7 +1074,6 @@
             } else { homeworkData = []; renderAllHomework(true); }
             
             try {
-                // 【修復】移除 12 秒強制 Promise.race，避免因 GAS 冷啟動較慢導致前端提早判定失敗並丟失真實資料
                 const cloudResult = await loadFromCloudWithCache(dateKey);
                 if (dateKeyISO(currentDate) !== dateKey) return; // 確保異步回來後，使用者還留在同一天
                 
@@ -1062,7 +1081,7 @@
                     homeworkData = [...cloudResult.data]; renderAllHomework();
                 }
             } catch (e) {
-                // 【修復】防止被 Abort 的舊請求清除當前畫面的載入狀態
+                // 防止被 Abort 的舊請求清除當前畫面的載入狀態
                 if (dateKeyISO(currentDate) !== dateKey) return; 
                 if (!cacheItem) { homeworkData = []; renderAllHomework(); }
             }
