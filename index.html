@@ -383,6 +383,10 @@
         }
 
         function calculateStableHash(rawData) {
+            // 防呆：如果傳入的是字串格式的 JSON，先將其解析為陣列
+            if (typeof rawData === 'string') {
+                try { rawData = JSON.parse(rawData); } catch (e) { return 'empty'; }
+            }
             if (!rawData || !Array.isArray(rawData)) return 'empty';
             const stableContent = rawData.map(item => {
                 if (typeof item === 'string') return { content: item.trim(), subject: '國語', status: 'confirmed' };
@@ -415,6 +419,10 @@
         }
 
         function normalizeHomeworkData(rawData) {
+            // 防呆：如果傳入的是字串格式的 JSON，先將其解析為陣列
+            if (typeof rawData === 'string') {
+                try { rawData = JSON.parse(rawData); } catch (e) { return []; }
+            }
             if (!rawData || !Array.isArray(rawData)) return [];
             return rawData.map((item, index) => {
                 let content = '', subject = '國語', status = 'confirmed', timestamp = null;
@@ -898,7 +906,13 @@
                     
                     const result = await response.json();
                     if (result.success || result.data) {
-                        const rawData = result.data || [];
+                        let rawData = result.data || [];
+                        
+                        // 【關鍵修復】: 將從雲端取回的字串資料正確解析回陣列
+                        if (typeof rawData === 'string') {
+                            try { rawData = JSON.parse(rawData); } catch (e) { rawData = []; }
+                        }
+                        
                         const normalizedData = normalizeHomeworkData(rawData);
                         const hash = result.hash || calculateStableHash(rawData);
                         writeToCache(dateKey, normalizedData, hash);
