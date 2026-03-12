@@ -86,7 +86,7 @@
         .status-pending { background-color: #f59e0b; color: white; }
         .status-editing { background-color: #6b7280; color: white; }
         
-        /* 拖拽排序樣式 */
+        /* 聯絡簿拖拽排序樣式 */
         .sortable-item {
             cursor: move;
             transition: all 0.2s ease;
@@ -115,6 +115,26 @@
             font-weight: 600;
             color: #92400e;
         }
+
+        /* 跑馬燈拖拽排序樣式 */
+        .global-sortable-item {
+            cursor: move;
+            transition: all 0.2s ease;
+        }
+        .global-sortable-item:hover { transform: translateY(-1px); }
+        .global-sortable-item.dragging {
+            opacity: 0.5;
+            transform: rotate(2deg);
+            z-index: 1000;
+        }
+        .global-sortable-item.drag-over { border-top: 3px solid #eab308; } /* 黃色邊框 */
+        .global-drag-handle {
+            cursor: grab;
+            color: #9ca3af;
+            transition: color 0.2s;
+        }
+        .global-drag-handle:hover { color: #ca8a04; }
+        .global-drag-handle:active { cursor: grabbing; }
         
         /* 跑馬燈動畫 */
         @keyframes scroll {
@@ -273,7 +293,7 @@
                     </div>
                     
                     <div class="text-sm text-gray-500 mb-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                        💡 提示：系統會依照您下方的列表順序，將「已打勾」的項目輪播顯示。點擊上下箭頭調整順序。<br>
+                        💡 提示：系統會依照您下方的列表順序，將「已打勾」的項目輪播顯示。可按住左側「⋮⋮」拖曳調整順序。<br>
                         變更會在您點擊「退出編輯」時一併儲存至 Google Sheet 獨立分頁。
                     </div>
                     <div id="globalEventsList" class="space-y-3"></div>
@@ -300,6 +320,9 @@
             { id: 'e3', type: 'countdown', name: '畢業班第二次定期評量 (6/1-5)', date: '2026-06-01', enabled: true },
             { id: 'e4', type: 'countdown', name: '校慶＆畢業典禮 (6/18)', date: '2026-06-18', enabled: true }
         ];
+        
+        // 紀錄當前載入的跑馬燈原始資料，用於背景比對
+        let currentGlobalDataString = null;
 
         const firstSemesterStart = new Date('2025-09-01');
         const firstSemesterEnd = new Date('2026-01-20');
@@ -436,6 +459,7 @@
             }).filter(Boolean);
         }
 
+        // 背景更新與比對邏輯 (升級版：包含作業與跑馬燈)
         async function performBackgroundUpdate() {
             if (isBackgroundUpdating || editMode) return;
             const now = Date.now();
@@ -443,10 +467,35 @@
             isBackgroundUpdating = true;
             lastBackgroundUpdate = now;
             try {
+                let hasChanges = false;
+
+                // 1. 檢查今日作業是否被更新
                 const dateKey = dateKeyISO(currentDate);
                 const cacheItem = getFromMemoryCache(dateKey) || getFromLocalStorage(dateKey);
                 const cloudResult = await loadFromCloudWithCache(dateKey, true);
                 if (cacheItem && cloudResult.hash && cacheItem.hash !== cloudResult.hash) {
+                    hasChanges = true;
+                }
+
+                // 2. 檢查跑馬燈(全域設定)是否被更新
+                const params = new URLSearchParams({
+                    action: 'loadGlobal',
+                    classId: CACHE_CONFIG.CLASS_ID,
+                    token: 'homework2025',
+                    _t: Date.now()
+                });
+                const globalResponse = await fetch(`${APPS_SCRIPT_URL}?${params.toString()}`, { cache: 'no-store' });
+                if (globalResponse.ok) {
+                    const globalResult = await globalResponse.json();
+                    if (globalResult.success && globalResult.data) {
+                        const fetchedString = typeof globalResult.data === 'string' ? globalResult.data : JSON.stringify(globalResult.data);
+                        if (currentGlobalDataString !== null && currentGlobalDataString !== fetchedString) {
+                            hasChanges = true;
+                        }
+                    }
+                }
+
+                if (hasChanges) {
                     showBackgroundUpdateNotification();
                 }
             } catch (error) {
@@ -463,15 +512,15 @@
             notification.innerHTML = `
                 <div class="flex items-center justify-between">
                     <div class="flex items-center space-x-2">
-                        <span class="text-lg">🔄</span>
-                        <div><div class="font-medium">資料已更新</div><div class="text-sm">點擊重新載入查看最新內容</div></div>
+                        <span class="text-2xl">🔄</span>
+                        <div><div class="font-bold text-base">資料與雲端不一致</div><div class="text-sm">作業或跑馬燈已有更新，請重整畫面確保資料同步</div></div>
                     </div>
-                    <button onclick="applyBackgroundUpdate()" class="ml-3 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm font-medium transition-colors">重新載入</button>
+                    <button onclick="applyBackgroundUpdate()" class="ml-3 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors">重整畫面</button>
                 </div>
-                <button onclick="dismissBackgroundUpdate()" class="absolute top-1 right-1 text-blue-400 hover:text-blue-600 text-lg leading-none">×</button>
+                <button onclick="dismissBackgroundUpdate()" class="absolute top-1 right-2 text-blue-400 hover:text-blue-600 text-xl font-bold leading-none">×</button>
             `;
             document.body.appendChild(notification);
-            setTimeout(dismissBackgroundUpdate, 10000);
+            setTimeout(dismissBackgroundUpdate, 15000);
         }
 
         async function applyBackgroundUpdate() { dismissBackgroundUpdate(); await forceReloadHomework(); }
@@ -601,6 +650,7 @@
             return item;
         }
 
+        // ================= 作業清單拖曳功能 =================
         let draggedElement = null, draggedHomeworkId = null;
         function handleDragStart(e) {
             const item = e.target.closest('.sortable-item');
@@ -643,6 +693,54 @@
             document.querySelectorAll('.sortable-item').forEach(i => i.classList.remove('drag-over'));
         }
 
+        // ================= 全域跑馬燈拖曳功能 =================
+        let draggedGlobalElement = null;
+        let draggedGlobalEventId = null;
+
+        function handleGlobalDragStart(e) {
+            const item = e.target.closest('.global-sortable-item');
+            if (!item) return;
+            draggedGlobalElement = item;
+            draggedGlobalEventId = item.dataset.eventId;
+            item.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', draggedGlobalEventId);
+        }
+        function handleGlobalDragEnd(e) {
+            if (draggedGlobalElement) draggedGlobalElement.classList.remove('dragging');
+            document.querySelectorAll('.global-sortable-item').forEach(i => i.classList.remove('drag-over'));
+            draggedGlobalElement = null;
+            draggedGlobalEventId = null;
+        }
+        function handleGlobalDragOver(e) {
+            e.preventDefault(); e.stopPropagation();
+            if (!draggedGlobalElement) return;
+            e.dataTransfer.dropEffect = 'move';
+            const target = e.target.closest('.global-sortable-item');
+            if (target && target !== draggedGlobalElement) {
+                document.querySelectorAll('.global-sortable-item').forEach(i => i.classList.remove('drag-over'));
+                target.classList.add('drag-over');
+            }
+        }
+        function handleGlobalDrop(e) {
+            e.preventDefault(); e.stopPropagation();
+            if (!draggedGlobalElement || !draggedGlobalEventId) return;
+            const target = e.target.closest('.global-sortable-item');
+            if (target && target !== draggedGlobalElement) {
+                const targetId = target.dataset.eventId;
+                const draggedIdx = globalEvents.findIndex(ev => ev.id === draggedGlobalEventId);
+                const targetIdx = globalEvents.findIndex(ev => ev.id === targetId);
+                if (draggedIdx > -1 && targetIdx > -1) {
+                    const item = globalEvents.splice(draggedIdx, 1)[0];
+                    globalEvents.splice(targetIdx, 0, item);
+                    renderGlobalEventsEditor(); // 重新渲染UI
+                    updateCountdown(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime());
+                }
+            }
+            document.querySelectorAll('.global-sortable-item').forEach(i => i.classList.remove('drag-over'));
+        }
+
+        // ================= 作業管理相關 =================
         function updateHomeworkSubject(id, subject) {
             const hw = homeworkData.find(h => h.id === id);
             if (hw) { hw.subject = subject; hw.timestamp = new Date().toISOString(); }
@@ -695,35 +793,15 @@
             updateCountdown(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime());
         }
 
-        function moveGlobalEventUp(id) {
-            const idx = globalEvents.findIndex(e => e.id === id);
-            if (idx > 0) {
-                [globalEvents[idx], globalEvents[idx-1]] = [globalEvents[idx-1], globalEvents[idx]];
-                renderGlobalEventsEditor();
-                updateCountdown(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime());
-            }
-        }
-
-        function moveGlobalEventDown(id) {
-            const idx = globalEvents.findIndex(e => e.id === id);
-            if (idx > -1 && idx < globalEvents.length - 1) {
-                [globalEvents[idx], globalEvents[idx+1]] = [globalEvents[idx+1], globalEvents[idx]];
-                renderGlobalEventsEditor();
-                updateCountdown(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime());
-            }
-        }
-
         function renderGlobalEventsEditor() {
             const container = document.getElementById('globalEventsList');
             if (!container) return;
             
             container.innerHTML = globalEvents.map((ev, idx) => {
                 const isChecked = ev.enabled !== false;
-                const upBtn = idx === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-200 cursor-pointer';
-                const downBtn = idx === globalEvents.length - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-gray-200 cursor-pointer';
                 
                 const typeHtml = `
-                    <select onchange="updateGlobalEventField('${ev.id}', 'type', this)" class="bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-sm font-medium focus:ring-2 focus:ring-yellow-400">
+                    <select onchange="updateGlobalEventField('${ev.id}', 'type', this)" class="bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-sm font-medium focus:ring-2 focus:ring-yellow-400 w-full sm:w-auto">
                         <option value="countdown" ${ev.type === 'countdown' ? 'selected' : ''}>活動倒數</option>
                         <option value="message" ${ev.type === 'message' ? 'selected' : ''}>純文字訊息</option>
                     </select>
@@ -735,20 +813,24 @@
                     : `<input type="text" value="${ev.content || ''}" placeholder="輸入跑馬燈宣導訊息..." oninput="updateGlobalEventField('${ev.id}', 'content', this)" class="flex-1 w-full bg-white border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2">`;
                 
                 return `
-                <div class="bg-yellow-50 rounded-xl p-3 sm:p-4 border border-yellow-200 shadow-sm flex flex-col sm:flex-row gap-3 items-start sm:items-center transition-opacity ${isChecked ? '' : 'opacity-50'}">
-                    <div class="flex items-center shrink-0 space-x-2">
-                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="updateGlobalEventField('${ev.id}', 'enabled', this)" class="w-5 h-5 text-yellow-600 rounded cursor-pointer">
-                        <div class="flex flex-col border border-yellow-300 rounded bg-white overflow-hidden">
-                            <button onclick="moveGlobalEventUp('${ev.id}')" class="px-1.5 py-0.5 text-xs text-gray-600 ${upBtn}" ${idx === 0 ? 'disabled' : ''}>▲</button>
-                            <div class="h-px bg-yellow-200"></div>
-                            <button onclick="moveGlobalEventDown('${ev.id}')" class="px-1.5 py-0.5 text-xs text-gray-600 ${downBtn}" ${idx === globalEvents.length - 1 ? 'disabled' : ''}>▼</button>
-                        </div>
+                <div class="global-sortable-item bg-yellow-50 rounded-xl p-3 sm:p-4 border border-yellow-200 shadow-sm flex flex-col sm:flex-row gap-3 items-start sm:items-center transition-opacity ${isChecked ? '' : 'opacity-50'}" data-event-id="${ev.id}" draggable="true">
+                    <div class="flex items-center shrink-0 w-full sm:w-auto">
+                        <div class="global-drag-handle mr-2 sm:mr-3 text-xl sm:text-2xl cursor-grab hover:cursor-grabbing select-none shrink-0" draggable="false" title="按住拖曳以排序">⋮⋮</div>
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="updateGlobalEventField('${ev.id}', 'enabled', this)" class="w-5 h-5 text-yellow-600 rounded cursor-pointer mr-2 sm:mr-0">
                     </div>
                     ${typeHtml}
                     ${inputHtml}
-                    <button onclick="removeGlobalEvent('${ev.id}')" class="text-red-500 hover:bg-red-50 p-2 rounded-lg border border-red-100 bg-white ml-auto sm:ml-0">🗑️</button>
+                    <button onclick="removeGlobalEvent('${ev.id}')" class="text-red-500 hover:bg-red-50 p-2 rounded-lg border border-red-100 bg-white ml-auto sm:ml-0 mt-2 sm:mt-0">🗑️</button>
                 </div>`;
             }).join('');
+
+            // 綁定跑馬燈專屬的拖曳事件
+            document.querySelectorAll('.global-sortable-item').forEach(item => {
+                item.addEventListener('dragstart', handleGlobalDragStart);
+                item.addEventListener('dragend', handleGlobalDragEnd);
+                item.addEventListener('dragover', handleGlobalDragOver);
+                item.addEventListener('drop', handleGlobalDrop);
+            });
         }
 
         function updateGlobalEventField(id, field, element) {
@@ -791,6 +873,8 @@
                 const response = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData, cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 console.log('✅ 全域跑馬燈設定已成功儲存至獨立雲端表單');
+                // 儲存成功後更新基準字串，避免立刻又彈出重整提示
+                currentGlobalDataString = JSON.stringify(dataToSave);
             } catch (e) {
                 console.error('儲存全域跑馬燈失敗:', e);
             }
@@ -812,6 +896,9 @@
                 const result = await response.json();
                 if (result.success && result.data) {
                     const parsedData = typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
+                    // 記錄最新雲端字串供背景比對
+                    currentGlobalDataString = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+
                     if (parsedData.events) globalEvents = parsedData.events;
                     if (parsedData.config) {
                         globalConfig = parsedData.config;
@@ -1010,8 +1097,7 @@
                 editMode = false;
                 updateEditModeUI();
                 showNotification('儲存完成，即將載入...', 'success');
-                setTimeout(async () => { await loadHomework(); showNotification('資料已更新！', 'success'); }, 2000);
-                renderAllHomework();
+                setTimeout(async () => { await forceReloadHomework(); showNotification('資料已更新！', 'success'); }, 2000);
             } else { showNotification(saveResult?.message || '儲存失敗', 'error'); }
         }
 
@@ -1100,19 +1186,15 @@
                 const baseMsg = msgs.join('<span class="mx-8 text-yellow-400 font-normal">|</span>') + '<span class="mx-8 text-yellow-400 font-normal">|</span>';
                 
                 // --- 核心優化：恆定跑馬燈物理速度 ---
-                // 計算去除 HTML 標籤後的純文字長度
                 const rawText = baseMsg.replace(/<[^>]*>?/gm, '');
                 const charCount = rawText.length || 1;
                 
-                const copies = 20; // 產生 20 份以確保無縫
-                const crossedCopies = copies / 2; // 動畫 translateX(-50%) 實際上會完整走過 10 份
+                const copies = 20;
+                const crossedCopies = copies / 2;
                 const totalCrossedChars = charCount * crossedCopies;
                 
-                // 取得使用者設定的秒數 (預設 200)
                 const speedSetting = Math.max(150, Math.min(400, globalConfig.marqueeSpeed || 200));
                 
-                // 建立基準比例：假設 300 個字元大約對應使用者設定的秒數
-                // 這樣一來，不論文字多長，都會按比例延長時間，確保「移動速度恆定」不暴衝！
                 const referenceChars = 300;
                 const calculatedDuration = (totalCrossedChars / referenceChars) * speedSetting;
 
