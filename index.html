@@ -340,7 +340,7 @@
             CLASS_ID: '601',
             SHOW_SYNC_HINTS: false,
             PREFETCH_WEEKENDS: false,
-            VERSION: '1.4.0', // 更新版本號以確保舊的錯亂快取被清空
+            VERSION: '1.5.0', // 更新版本號以確保舊的錯亂快取被清空
             DEBUG: true, 
             BACKGROUND_UPDATE_INTERVAL: 5000, 
             BACKGROUND_UPDATE_ENABLED: true 
@@ -353,27 +353,24 @@
         let isBackgroundUpdating = false;
         let lastBackgroundUpdate = 0;
 
-        // 【100% 復原：最初始的寫入日期產生方式】
+        // 【修復：絕對穩定的日期格式】捨棄瀏覽器 Intl 語系差異，確保任何裝置產生出來的 key 都是完美的 YYYY-MM-DD
         function dateKeyISO(d) {
-            const taipeiDate = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
-            const year = taipeiDate.find(p => p.type === 'year').value;
-            const month = taipeiDate.find(p => p.type === 'month').value;
-            const day = taipeiDate.find(p => p.type === 'day').value;
-            return `${year}-${month}-${day}`;
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
         }
 
-        // 【讀取端防呆機制】：修復逗號截斷或換行引發的 JSON 損毀
+        // 讀取端防呆機制：修復逗號截斷或換行引發的 JSON 損毀
         function parseRawData(rawData) {
             if (typeof rawData === 'string') {
                 try { 
                     return JSON.parse(rawData); 
                 } catch (e) { 
                     try {
-                        // 防呆一：過濾掉未跳脫的換行與隱藏字元
                         let cleanStr = rawData.replace(/[\n\r\t]/g, ' ');
                         return JSON.parse(cleanStr);
                     } catch(e2) {
-                        // 防呆二：若後端 CSV 被輸入內容的「逗號」截斷，嘗試強制補回結尾括號
                         if (rawData.startsWith('[{') && !rawData.endsWith('}]')) {
                             try { return JSON.parse(rawData.replace(/,[^{]*$/, '') + '}]'); } catch(e3) {}
                         }
@@ -439,7 +436,6 @@
             try { localStorage.setItem(cacheKey, JSON.stringify(item)); } catch (error) {}
         }
 
-        // 【100% 復原：最初始的 Hash 機制，套用防呆解析】
         function calculateStableHash(rawData) {
             let parsedData = parseRawData(rawData);
             if (!Array.isArray(parsedData)) return 'empty';
@@ -473,7 +469,6 @@
             return `hw_${hash.toString(36)}`;
         }
 
-        // 【100% 復原：最初始的資料常規化機制，套用防呆解析】
         function normalizeHomeworkData(rawData) {
             let parsedData = parseRawData(rawData);
             if (!Array.isArray(parsedData)) return [];
@@ -978,7 +973,7 @@
             setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 4000);
         }
 
-        // 【100% 復原：最初始的儲存連線邏輯】
+        // 【修復：補回缺失的 userAgent，完全還原原始寫入格式】
         async function saveToGoogleSheets(dateKey, data) {
             try {
                 const formData = new FormData();
@@ -988,6 +983,7 @@
                 formData.append('data', JSON.stringify(data));
                 formData.append('token', 'homework2025');
                 formData.append('timestamp', new Date().toISOString());
+                formData.append('userAgent', navigator.userAgent); // 補回使用者代理資訊
 
                 const response = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData, cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1049,6 +1045,7 @@
             try { return await loadPromise; } finally { inflightRequests.delete(dateKey); }
         }
 
+        // 【修復：3/16讀取救援】讀取時若標準格式抓不到，會自動嘗試抓取舊有未補零的日期格式 (如 2026-3-16)
         async function loadHomeworkWithSWR(dateKey) {
             let cacheItem = getFromMemoryCache(dateKey) || getFromLocalStorage(dateKey);
             if (cacheItem && cacheItem.data) {
@@ -1056,7 +1053,21 @@
             } else { homeworkData = []; renderAllHomework(true); }
             
             try {
-                const cloudResult = await loadFromCloudWithCache(dateKey);
+                let cloudResult = await loadFromCloudWithCache(dateKey);
+                
+                // --- 3/16 舊資料救援機制 ---
+                if (!cloudResult || !cloudResult.data || cloudResult.data.length === 0) {
+                    const fallbackDateKey = `${currentDate.getFullYear()}-${currentDate.getMonth()+1}-${currentDate.getDate()}`;
+                    if (fallbackDateKey !== dateKey) {
+                        try {
+                            const fallbackResult = await loadFromCloudWithCache(fallbackDateKey, true);
+                            if (fallbackResult && fallbackResult.data && fallbackResult.data.length > 0) {
+                                cloudResult = fallbackResult;
+                            }
+                        } catch(e) {}
+                    }
+                }
+                
                 if (dateKeyISO(currentDate) !== dateKey) return; 
                 
                 if ((!cacheItem || cacheItem.hash !== cloudResult.hash) && cloudResult.data !== undefined) {
@@ -1068,7 +1079,6 @@
             }
         }
 
-        // 【100% 復原：最初始的寫入封裝邏輯 (legacyData)】
         async function saveHomeworkInstantly() {
             if (isSaving) return { success: false, message: '正在儲存中' };
             isSaving = true;
@@ -1166,7 +1176,20 @@
             
             try {
                 if (currentLoadController) currentLoadController.abort();
-                const cloudResult = await loadFromCloudWithCache(dateKey);
+                let cloudResult = await loadFromCloudWithCache(dateKey);
+                
+                // --- 3/16 舊資料救援機制 ---
+                if (!cloudResult || !cloudResult.data || cloudResult.data.length === 0) {
+                    const fallbackDateKey = `${currentDate.getFullYear()}-${currentDate.getMonth()+1}-${currentDate.getDate()}`;
+                    if (fallbackDateKey !== dateKey) {
+                        try {
+                            const fallbackResult = await loadFromCloudWithCache(fallbackDateKey, true);
+                            if (fallbackResult && fallbackResult.data && fallbackResult.data.length > 0) {
+                                cloudResult = fallbackResult;
+                            }
+                        } catch(e) {}
+                    }
+                }
                 
                 if (dateKeyISO(currentDate) === dateKey) {
                     homeworkData = [...cloudResult.data]; renderAllHomework();
