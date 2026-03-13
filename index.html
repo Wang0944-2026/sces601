@@ -340,7 +340,7 @@
             CLASS_ID: '601',
             SHOW_SYNC_HINTS: false,
             PREFETCH_WEEKENDS: false,
-            VERSION: '1.5.0', // 更新版本號以確保舊的錯亂快取被清空
+            VERSION: '1.6.0', // 【修復】升級版本號為 1.6.0，強制清空舊的 3/16 錯誤快取
             DEBUG: true, 
             BACKGROUND_UPDATE_INTERVAL: 5000, 
             BACKGROUND_UPDATE_ENABLED: true 
@@ -973,17 +973,22 @@
             setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 4000);
         }
 
-        // 【修復：補回缺失的 userAgent，完全還原原始寫入格式】
+        // 【修復：補回缺失的 userAgent，並將 updatedAt 欄位格式徹底還原為 YYYY-MM-DD HH:mm:ss】
         async function saveToGoogleSheets(dateKey, data) {
             try {
+                // 手動拼接回舊有的時間格式，避免 GAS 解析崩潰而中斷寫入
+                const now = new Date();
+                const pad = (n) => String(n).padStart(2, '0');
+                const formattedTimestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
                 const formData = new FormData();
                 formData.append('action', 'save');
                 formData.append('dateKey', dateKey);
                 formData.append('classId', CACHE_CONFIG.CLASS_ID);
                 formData.append('data', JSON.stringify(data));
                 formData.append('token', 'homework2025');
-                formData.append('timestamp', new Date().toISOString());
-                formData.append('userAgent', navigator.userAgent); // 補回使用者代理資訊
+                formData.append('timestamp', formattedTimestamp); // 還原為舊有格式
+                formData.append('userAgent', navigator.userAgent); // 現在不會再被丟棄了
 
                 const response = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData, cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
