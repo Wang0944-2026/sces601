@@ -127,7 +127,7 @@
             transform: rotate(2deg);
             z-index: 1000;
         }
-        .global-sortable-item.drag-over { border-top: 3px solid #eab308; } /* 黃色邊框 */
+        .global-sortable-item.drag-over { border-top: 3px solid #eab308; }
         .global-drag-handle {
             cursor: grab;
             color: #9ca3af;
@@ -340,7 +340,7 @@
             CLASS_ID: '601',
             SHOW_SYNC_HINTS: false,
             PREFETCH_WEEKENDS: false,
-            VERSION: '1.3.0', // 更新版本號清空舊有壞掉的快取
+            VERSION: '1.4.0', // 更新版本號以確保舊的錯亂快取被清空
             DEBUG: true, 
             BACKGROUND_UPDATE_INTERVAL: 5000, 
             BACKGROUND_UPDATE_ENABLED: true 
@@ -353,61 +353,35 @@
         let isBackgroundUpdating = false;
         let lastBackgroundUpdate = 0;
 
-        // ================= 終極容錯：多種可能日期變體生成 =================
-        function getDateKeyVariants(d) {
-            const yyyy = d.getFullYear();
-            const m = d.getMonth() + 1;
-            const d_num = d.getDate();
-            const mm = m.toString().padStart(2, '0');
-            const dd = d_num.toString().padStart(2, '0');
-            
-            // 涵蓋所有可能寫入後端 CSV 的日期格式，同時併發查詢
-            return Array.from(new Set([
-                `${yyyy}-${mm}-${dd}`,   // 嚴格標準: 2026-03-16
-                `${yyyy}-${m}-${d_num}`, // 舊版未補零: 2026-3-16
-                `${yyyy}/${mm}/${dd}`,   // 試算表手動輸入格式 1
-                `${yyyy}/${m}/${d_num}`  // 試算表手動輸入格式 2
-            ]));
+        // 【100% 復原：最初始的寫入日期產生方式】
+        function dateKeyISO(d) {
+            const taipeiDate = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+            const year = taipeiDate.find(p => p.type === 'year').value;
+            const month = taipeiDate.find(p => p.type === 'month').value;
+            const day = taipeiDate.find(p => p.type === 'day').value;
+            return `${year}-${month}-${day}`;
         }
 
-        // ================= 終極容錯：極限 JSON 解析器 =================
-        function safeJSONParse(data) {
-            if (!data) return null;
-            if (typeof data !== 'string') return data; // 已經是物件陣列
-            
-            let parsed = data;
-            let attempts = 0;
-            
-            // 嘗試脫殼被重複 stringify 或格式微壞的資料
-            while (typeof parsed === 'string' && attempts < 3) {
-                try {
-                    parsed = JSON.parse(parsed);
-                } catch (e) {
+        // 【讀取端防呆機制】：修復逗號截斷或換行引發的 JSON 損毀
+        function parseRawData(rawData) {
+            if (typeof rawData === 'string') {
+                try { 
+                    return JSON.parse(rawData); 
+                } catch (e) { 
                     try {
-                        // 強制清洗：替換不合法單引號、清除換行、去除前後多餘引號
-                        let sanitized = parsed
-                            .replace(/\\"/g, '"')
-                            .replace(/\\n/g, ' ')
-                            .replace(/[\n\r\t]/g, ' ')
-                            .replace(/'/g, '"')
-                            .trim();
-                            
-                        if (sanitized.startsWith('"') && sanitized.endsWith('"')) {
-                            sanitized = sanitized.slice(1, -1);
+                        // 防呆一：過濾掉未跳脫的換行與隱藏字元
+                        let cleanStr = rawData.replace(/[\n\r\t]/g, ' ');
+                        return JSON.parse(cleanStr);
+                    } catch(e2) {
+                        // 防呆二：若後端 CSV 被輸入內容的「逗號」截斷，嘗試強制補回結尾括號
+                        if (rawData.startsWith('[{') && !rawData.endsWith('}]')) {
+                            try { return JSON.parse(rawData.replace(/,[^{]*$/, '') + '}]'); } catch(e3) {}
                         }
-                        
-                        // 如果完全不像 JSON (例如純文字)，直接跳出保留原字串
-                        if (!sanitized.startsWith('[') && !sanitized.startsWith('{')) {
-                            break; 
-                        }
-                        parsed = JSON.parse(sanitized);
-                    } catch (e2) {
-                        break;
+                        return [];
                     }
                 }
-                attempts++;
             }
-            return parsed; // 如果依然解析失敗，將會回傳最後清洗過的純文字字串
+            return rawData || [];
         }
 
         class CacheItem {
@@ -465,24 +439,12 @@
             try { localStorage.setItem(cacheKey, JSON.stringify(item)); } catch (error) {}
         }
 
+        // 【100% 復原：最初始的 Hash 機制，套用防呆解析】
         function calculateStableHash(rawData) {
-            const parsedData = safeJSONParse(rawData);
-            let contentArray = [];
-            
-            if (typeof parsedData === 'string' && parsedData.trim()) {
-                contentArray = [{ content: parsedData.trim(), subject: '其它', status: 'confirmed' }];
-            } else if (Array.isArray(parsedData)) {
-                contentArray = parsedData;
-            } else if (parsedData && typeof parsedData === 'object') {
-                if (Array.isArray(parsedData.data)) contentArray = parsedData.data;
-                else if (Array.isArray(parsedData.homework)) contentArray = parsedData.homework;
-                else contentArray = [parsedData];
-            }
-            
-            if (contentArray.length === 0) return 'empty';
-            
-            const stableContent = contentArray.map(item => {
-                if (typeof item === 'string') return { content: item.trim(), subject: '其它', status: 'confirmed' };
+            let parsedData = parseRawData(rawData);
+            if (!Array.isArray(parsedData)) return 'empty';
+            const stableContent = parsedData.map(item => {
+                if (typeof item === 'string') return { content: item.trim(), subject: '國語', status: 'confirmed' };
                 else if (item && typeof item === 'object') {
                     return {
                         content: (item.text || item.content || item.homework || '').toString().trim(),
@@ -492,7 +454,6 @@
                 }
                 return null;
             }).filter(Boolean);
-            
             const str = JSON.stringify(stableContent);
             let hash = 0;
             for (let i = 0; i < str.length; i++) {
@@ -512,33 +473,14 @@
             return `hw_${hash.toString(36)}`;
         }
 
+        // 【100% 復原：最初始的資料常規化機制，套用防呆解析】
         function normalizeHomeworkData(rawData) {
-            const parsedData = safeJSONParse(rawData);
-            let contentArray = [];
-            
-            // 如果解析到底只是一串純文字 (例如老師手動在 CSV 填寫 "國語寫作L2")，直接寬容轉換為單項作業
-            if (typeof parsedData === 'string') {
-                if (parsedData.trim()) {
-                    return [new HomeworkItem(generateStableId('其它', parsedData, 0), '其它', parsedData, 'confirmed', new Date().toISOString())];
-                }
-                return [];
-            }
-            
-            // 如果資料被多包了一層物件
-            if (Array.isArray(parsedData)) {
-                contentArray = parsedData;
-            } else if (parsedData && typeof parsedData === 'object') {
-                if (Array.isArray(parsedData.data)) contentArray = parsedData.data;
-                else if (Array.isArray(parsedData.homework)) contentArray = parsedData.homework;
-                else contentArray = [parsedData];
-            }
-            
-            return contentArray.map((item, index) => {
+            let parsedData = parseRawData(rawData);
+            if (!Array.isArray(parsedData)) return [];
+            return parsedData.map((item, index) => {
                 let content = '', subject = '國語', status = 'confirmed', timestamp = null;
-                if (typeof item === 'string') {
-                    content = item.trim();
-                    subject = '其它';
-                } else if (item && typeof item === 'object') {
+                if (typeof item === 'string') content = item.trim();
+                else if (item && typeof item === 'object') {
                     content = (item.text || item.content || item.homework || '').toString().trim();
                     subject = item.subject || item.subj || '國語';
                     status = (item.confirmed === true || item.status === 'confirmed') ? 'confirmed' : (item.status === 'editing' ? 'editing' : 'confirmed');
@@ -549,7 +491,7 @@
             }).filter(Boolean);
         }
 
-        // 背景更新與比對邏輯 (並行多格式檢查)
+        // 背景更新與比對邏輯
         async function performBackgroundUpdate() {
             if (isBackgroundUpdating || editMode) return;
             const now = Date.now();
@@ -559,31 +501,14 @@
             try {
                 let hasChanges = false;
 
-                // 1. 並行檢查今日作業的多種格式是否被更新
-                const variants = getDateKeyVariants(currentDate);
-                const standardKey = variants[0];
-                const cacheItem = getFromMemoryCache(standardKey) || getFromLocalStorage(standardKey);
+                const dateKey = dateKeyISO(currentDate);
+                const cacheItem = getFromMemoryCache(dateKey) || getFromLocalStorage(dateKey);
+                const cloudResult = await loadFromCloudWithCache(dateKey, true);
                 
-                const promises = variants.map(key => loadFromCloudWithCache(key, true));
-                const results = await Promise.allSettled(promises);
-                
-                let cloudResult = null;
-                for (const res of results) {
-                    if (res.status === 'fulfilled' && res.value && res.value.data && res.value.data.length > 0) {
-                        cloudResult = res.value;
-                        break;
-                    }
-                }
-                if (!cloudResult) {
-                    const stdRes = results[0];
-                    cloudResult = stdRes.status === 'fulfilled' ? stdRes.value : { data: [], hash: null };
-                }
-
                 if (cacheItem && cloudResult.hash && cacheItem.hash !== cloudResult.hash) {
                     hasChanges = true;
                 }
 
-                // 2. 檢查跑馬燈(全域設定)是否被更新
                 const params = new URLSearchParams({
                     action: 'loadGlobal',
                     classId: CACHE_CONFIG.CLASS_ID,
@@ -641,14 +566,6 @@
 
         function stopBackgroundUpdate() {
             if (backgroundUpdateTimer) { clearInterval(backgroundUpdateTimer); backgroundUpdateTimer = null; }
-        }
-
-        // 以標準格式作為核心基準
-        function dateKeyISO(d) {
-            const yyyy = d.getFullYear();
-            const m = (d.getMonth() + 1).toString().padStart(2, '0');
-            const day = d.getDate().toString().padStart(2, '0');
-            return `${yyyy}-${m}-${day}`;
         }
 
         class HomeworkItem {
@@ -1002,7 +919,7 @@
                 
                 const result = await response.json();
                 if (result.success && result.data) {
-                    const parsedData = safeJSONParse(result.data);
+                    const parsedData = parseRawData(result.data);
                     const safeObj = (parsedData && typeof parsedData === 'object' && !Array.isArray(parsedData)) ? parsedData : {};
                     
                     currentGlobalDataString = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
@@ -1061,6 +978,7 @@
             setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 4000);
         }
 
+        // 【100% 復原：最初始的儲存連線邏輯】
         async function saveToGoogleSheets(dateKey, data) {
             try {
                 const formData = new FormData();
@@ -1112,7 +1030,7 @@
                         let rawData = result.data || [];
                         const normalizedData = normalizeHomeworkData(rawData);
                         const hash = result.hash || calculateStableHash(rawData);
-                        // 不強制在此快取，交由上層統一使用 StandardKey 快取
+                        writeToCache(dateKey, normalizedData, hash);
                         return { data: normalizedData, hash, fromCloud: true };
                     } else throw new Error(result.error || '載入失敗');
                 } catch (e) {
@@ -1131,49 +1049,26 @@
             try { return await loadPromise; } finally { inflightRequests.delete(dateKey); }
         }
 
-        // 核心改寫：平行並發載入多種格式，解決日期鍵值錯亂
-        async function loadHomeworkWithSWR(d) {
-            const variants = getDateKeyVariants(d);
-            const standardKey = variants[0];
-            
-            let cacheItem = getFromMemoryCache(standardKey) || getFromLocalStorage(standardKey);
+        async function loadHomeworkWithSWR(dateKey) {
+            let cacheItem = getFromMemoryCache(dateKey) || getFromLocalStorage(dateKey);
             if (cacheItem && cacheItem.data) {
-                if (dateKeyISO(currentDate) === standardKey) { homeworkData = [...cacheItem.data]; renderAllHomework(); }
+                if (dateKeyISO(currentDate) === dateKey) { homeworkData = [...cacheItem.data]; renderAllHomework(); }
             } else { homeworkData = []; renderAllHomework(true); }
             
             try {
-                // 平行轟炸：同時向後端請求四種可能的日期格式（第一筆負責更新 UI 狀態，其他安靜執行）
-                const promises = variants.map((key, idx) => loadFromCloudWithCache(key, idx !== 0));
-                const results = await Promise.allSettled(promises);
+                const cloudResult = await loadFromCloudWithCache(dateKey);
+                if (dateKeyISO(currentDate) !== dateKey) return; 
                 
-                if (dateKeyISO(currentDate) !== standardKey) return; 
-                
-                let bestResult = null;
-                // 取出第一筆成功且真的有資料的回應
-                for (let i = 0; i < results.length; i++) {
-                    const res = results[i];
-                    if (res.status === 'fulfilled' && res.value && res.value.data && res.value.data.length > 0) {
-                        bestResult = res.value;
-                        break;
-                    }
-                }
-                
-                // 若全無資料，退回標準日期的結果（通常是空陣列）
-                if (!bestResult) {
-                    const stdRes = results[0];
-                    bestResult = stdRes.status === 'fulfilled' ? stdRes.value : { data: [], hash: null };
-                }
-                
-                if ((!cacheItem || cacheItem.hash !== bestResult.hash) && bestResult.data !== undefined) {
-                    writeToCache(standardKey, bestResult.data, bestResult.hash); // 統一儲存為標準格式快取
-                    homeworkData = [...bestResult.data]; renderAllHomework();
+                if ((!cacheItem || cacheItem.hash !== cloudResult.hash) && cloudResult.data !== undefined) {
+                    homeworkData = [...cloudResult.data]; renderAllHomework();
                 }
             } catch (e) {
-                if (dateKeyISO(currentDate) !== standardKey) return; 
+                if (dateKeyISO(currentDate) !== dateKey) return; 
                 if (!cacheItem) { homeworkData = []; renderAllHomework(); }
             }
         }
 
+        // 【100% 復原：最初始的寫入封裝邏輯 (legacyData)】
         async function saveHomeworkInstantly() {
             if (isSaving) return { success: false, message: '正在儲存中' };
             isSaving = true;
@@ -1187,7 +1082,7 @@
             } finally { isSaving = false; }
         }
 
-        async function loadHomework() { await loadHomeworkWithSWR(currentDate); }
+        async function loadHomework() { await loadHomeworkWithSWR(dateKeyISO(currentDate)); }
 
         async function toggleEditMode() {
             if (!editMode) { showCustomPasswordDialog(); return; }
@@ -1264,41 +1159,23 @@
         }
 
         async function forceReloadHomework() {
-            const variants = getDateKeyVariants(currentDate);
-            const standardKey = variants[0];
-            
-            memoryCache.delete(getCacheKey(standardKey));
-            try { localStorage.removeItem(getCacheKey(standardKey)); localStorage.removeItem(standardKey); } catch (e) {}
+            const dateKey = dateKeyISO(currentDate);
+            memoryCache.delete(getCacheKey(dateKey));
+            try { localStorage.removeItem(getCacheKey(dateKey)); localStorage.removeItem(dateKey); } catch (e) {}
             showNotification('正在重新載入雲端資料...', 'success');
             
             try {
                 if (currentLoadController) currentLoadController.abort();
+                const cloudResult = await loadFromCloudWithCache(dateKey);
                 
-                const promises = variants.map((key, idx) => loadFromCloudWithCache(key, idx !== 0));
-                const results = await Promise.allSettled(promises);
-                
-                if (dateKeyISO(currentDate) !== standardKey) return;
-                
-                let bestResult = null;
-                for (let i = 0; i < results.length; i++) {
-                    const res = results[i];
-                    if (res.status === 'fulfilled' && res.value && res.value.data && res.value.data.length > 0) {
-                        bestResult = res.value;
-                        break;
-                    }
+                if (dateKeyISO(currentDate) === dateKey) {
+                    homeworkData = [...cloudResult.data]; renderAllHomework();
+                    await loadGlobalEvents(); 
+                    showNotification('資料已重新載入！', 'success');
                 }
-                
-                if (!bestResult) {
-                    const stdRes = results[0];
-                    bestResult = stdRes.status === 'fulfilled' ? stdRes.value : { data: [] };
-                }
-                
-                homeworkData = [...bestResult.data]; renderAllHomework();
-                await loadGlobalEvents(); 
-                showNotification('資料已重新載入！', 'success');
             } catch (e) { 
                 if (e.name !== 'AbortError') showNotification('載入失敗，請稍後重試', 'error');
-                if (dateKeyISO(currentDate) === standardKey) {
+                if (dateKeyISO(currentDate) === dateKey) {
                     homeworkData = []; renderAllHomework(); 
                 }
             }
