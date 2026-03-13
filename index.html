@@ -340,7 +340,7 @@
             CLASS_ID: '601',
             SHOW_SYNC_HINTS: false,
             PREFETCH_WEEKENDS: false,
-            VERSION: '1.7.0', // 【修復】更新版本號，強力清空所有舊的錯誤快取
+            VERSION: '1.8.0', // 【修復】升級版本至 1.8.0，徹底摧毀舊快取
             DEBUG: true, 
             BACKGROUND_UPDATE_INTERVAL: 5000, 
             BACKGROUND_UPDATE_ENABLED: true 
@@ -353,13 +353,14 @@
         let isBackgroundUpdating = false;
         let lastBackgroundUpdate = 0;
 
-        // 【100% 復原：最初始的寫入日期產生方式】保留原生 Intl，不再強制轉換，以免破壞舊資料格式默契
+        // 【修復：絕對零干擾的日期格式化】
+        // 放棄原先的 Intl.DateTimeFormat，改用絕對嚴謹的 padStart，
+        // 確保任何瀏覽器送出的 Key 都是完美的 YYYY-MM-DD，根絕 3/16 變 3-16 的悲劇。
         function dateKeyISO(d) {
-            const taipeiDate = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
-            const year = taipeiDate.find(p => p.type === 'year').value;
-            const month = taipeiDate.find(p => p.type === 'month').value;
-            const day = taipeiDate.find(p => p.type === 'day').value;
-            return `${year}-${month}-${day}`;
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
         }
 
         // 讀取端防呆機制：修復逗號截斷或換行引發的 JSON 損毀
@@ -974,7 +975,7 @@
             setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 4000);
         }
 
-        // 【100% 復原：最初始的儲存寫法，並補回原本沒有但需要記錄的 userAgent】
+        // 【終極修復：手動建構標準格式字串並確保攜帶 userAgent】
         async function saveToGoogleSheets(dateKey, data) {
             try {
                 const formData = new FormData();
@@ -983,8 +984,15 @@
                 formData.append('classId', CACHE_CONFIG.CLASS_ID);
                 formData.append('data', JSON.stringify(data));
                 formData.append('token', 'homework2025');
-                formData.append('timestamp', new Date().toISOString()); // 嚴格復原寫入時間的 payload
-                formData.append('userAgent', navigator.userAgent); // 補回系統與瀏覽器資訊
+                
+                // 強制轉換為 YYYY-MM-DD HH:mm:ss 以阻絕 Google Sheets 自動切換為中文格式
+                const now = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+                formData.append('timestamp', ts); 
+                
+                // 確保 userAgent 欄位不會遺失
+                formData.append('userAgent', navigator.userAgent);
 
                 const response = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData, cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
