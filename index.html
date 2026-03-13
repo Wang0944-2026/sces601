@@ -340,7 +340,7 @@
             CLASS_ID: '601',
             SHOW_SYNC_HINTS: false,
             PREFETCH_WEEKENDS: false,
-            VERSION: '1.2.0',
+            VERSION: '1.3.0', // 更新版本號清空舊有壞掉的快取
             DEBUG: true, 
             BACKGROUND_UPDATE_INTERVAL: 5000, 
             BACKGROUND_UPDATE_ENABLED: true 
@@ -353,29 +353,61 @@
         let isBackgroundUpdating = false;
         let lastBackgroundUpdate = 0;
 
-        // ================= 安全 JSON 解析器 (修復換行與格式化錯誤) =================
-        function safeJSONParse(data, defaultFallback = []) {
-            if (!data) return defaultFallback;
+        // ================= 終極容錯：多種可能日期變體生成 =================
+        function getDateKeyVariants(d) {
+            const yyyy = d.getFullYear();
+            const m = d.getMonth() + 1;
+            const d_num = d.getDate();
+            const mm = m.toString().padStart(2, '0');
+            const dd = d_num.toString().padStart(2, '0');
+            
+            // 涵蓋所有可能寫入後端 CSV 的日期格式，同時併發查詢
+            return Array.from(new Set([
+                `${yyyy}-${mm}-${dd}`,   // 嚴格標準: 2026-03-16
+                `${yyyy}-${m}-${d_num}`, // 舊版未補零: 2026-3-16
+                `${yyyy}/${mm}/${dd}`,   // 試算表手動輸入格式 1
+                `${yyyy}/${m}/${d_num}`  // 試算表手動輸入格式 2
+            ]));
+        }
+
+        // ================= 終極容錯：極限 JSON 解析器 =================
+        function safeJSONParse(data) {
+            if (!data) return null;
+            if (typeof data !== 'string') return data; // 已經是物件陣列
+            
             let parsed = data;
             let attempts = 0;
-            // 處理被多次 stringify 或格式微偏的資料
+            
+            // 嘗試脫殼被重複 stringify 或格式微壞的資料
             while (typeof parsed === 'string' && attempts < 3) {
                 try {
                     parsed = JSON.parse(parsed);
                 } catch (e) {
                     try {
-                        // 替換掉可能導致崩潰的不可見字元與未跳脫的換行
-                        let sanitized = parsed.replace(/[\n\r\t]/g, ' ');
+                        // 強制清洗：替換不合法單引號、清除換行、去除前後多餘引號
+                        let sanitized = parsed
+                            .replace(/\\"/g, '"')
+                            .replace(/\\n/g, ' ')
+                            .replace(/[\n\r\t]/g, ' ')
+                            .replace(/'/g, '"')
+                            .trim();
+                            
+                        if (sanitized.startsWith('"') && sanitized.endsWith('"')) {
+                            sanitized = sanitized.slice(1, -1);
+                        }
+                        
+                        // 如果完全不像 JSON (例如純文字)，直接跳出保留原字串
+                        if (!sanitized.startsWith('[') && !sanitized.startsWith('{')) {
+                            break; 
+                        }
                         parsed = JSON.parse(sanitized);
                     } catch (e2) {
-                        console.warn('資料格式異常無法解析:', parsed);
-                        break; // 跳出迴圈，會回傳 defaultFallback
+                        break;
                     }
                 }
                 attempts++;
             }
-            // 確保回傳值符合預期的陣列或物件結構
-            return (parsed !== null && typeof parsed === 'object') ? parsed : defaultFallback;
+            return parsed; // 如果依然解析失敗，將會回傳最後清洗過的純文字字串
         }
 
         class CacheItem {
@@ -434,11 +466,23 @@
         }
 
         function calculateStableHash(rawData) {
-            const parsedData = safeJSONParse(rawData, []);
-            if (!Array.isArray(parsedData) || parsedData.length === 0) return 'empty';
+            const parsedData = safeJSONParse(rawData);
+            let contentArray = [];
             
-            const stableContent = parsedData.map(item => {
-                if (typeof item === 'string') return { content: item.trim(), subject: '國語', status: 'confirmed' };
+            if (typeof parsedData === 'string' && parsedData.trim()) {
+                contentArray = [{ content: parsedData.trim(), subject: '其它', status: 'confirmed' }];
+            } else if (Array.isArray(parsedData)) {
+                contentArray = parsedData;
+            } else if (parsedData && typeof parsedData === 'object') {
+                if (Array.isArray(parsedData.data)) contentArray = parsedData.data;
+                else if (Array.isArray(parsedData.homework)) contentArray = parsedData.homework;
+                else contentArray = [parsedData];
+            }
+            
+            if (contentArray.length === 0) return 'empty';
+            
+            const stableContent = contentArray.map(item => {
+                if (typeof item === 'string') return { content: item.trim(), subject: '其它', status: 'confirmed' };
                 else if (item && typeof item === 'object') {
                     return {
                         content: (item.text || item.content || item.homework || '').toString().trim(),
@@ -448,6 +492,7 @@
                 }
                 return null;
             }).filter(Boolean);
+            
             const str = JSON.stringify(stableContent);
             let hash = 0;
             for (let i = 0; i < str.length; i++) {
@@ -468,13 +513,32 @@
         }
 
         function normalizeHomeworkData(rawData) {
-            const parsedData = safeJSONParse(rawData, []);
-            if (!Array.isArray(parsedData)) return [];
+            const parsedData = safeJSONParse(rawData);
+            let contentArray = [];
             
-            return parsedData.map((item, index) => {
+            // 如果解析到底只是一串純文字 (例如老師手動在 CSV 填寫 "國語寫作L2")，直接寬容轉換為單項作業
+            if (typeof parsedData === 'string') {
+                if (parsedData.trim()) {
+                    return [new HomeworkItem(generateStableId('其它', parsedData, 0), '其它', parsedData, 'confirmed', new Date().toISOString())];
+                }
+                return [];
+            }
+            
+            // 如果資料被多包了一層物件
+            if (Array.isArray(parsedData)) {
+                contentArray = parsedData;
+            } else if (parsedData && typeof parsedData === 'object') {
+                if (Array.isArray(parsedData.data)) contentArray = parsedData.data;
+                else if (Array.isArray(parsedData.homework)) contentArray = parsedData.homework;
+                else contentArray = [parsedData];
+            }
+            
+            return contentArray.map((item, index) => {
                 let content = '', subject = '國語', status = 'confirmed', timestamp = null;
-                if (typeof item === 'string') content = item.trim();
-                else if (item && typeof item === 'object') {
+                if (typeof item === 'string') {
+                    content = item.trim();
+                    subject = '其它';
+                } else if (item && typeof item === 'object') {
                     content = (item.text || item.content || item.homework || '').toString().trim();
                     subject = item.subject || item.subj || '國語';
                     status = (item.confirmed === true || item.status === 'confirmed') ? 'confirmed' : (item.status === 'editing' ? 'editing' : 'confirmed');
@@ -485,7 +549,7 @@
             }).filter(Boolean);
         }
 
-        // 背景更新與比對邏輯
+        // 背景更新與比對邏輯 (並行多格式檢查)
         async function performBackgroundUpdate() {
             if (isBackgroundUpdating || editMode) return;
             const now = Date.now();
@@ -495,10 +559,26 @@
             try {
                 let hasChanges = false;
 
-                // 1. 檢查今日作業是否被更新
-                const dateKey = dateKeyISO(currentDate);
-                const cacheItem = getFromMemoryCache(dateKey) || getFromLocalStorage(dateKey);
-                const cloudResult = await loadFromCloudWithCache(dateKey, true);
+                // 1. 並行檢查今日作業的多種格式是否被更新
+                const variants = getDateKeyVariants(currentDate);
+                const standardKey = variants[0];
+                const cacheItem = getFromMemoryCache(standardKey) || getFromLocalStorage(standardKey);
+                
+                const promises = variants.map(key => loadFromCloudWithCache(key, true));
+                const results = await Promise.allSettled(promises);
+                
+                let cloudResult = null;
+                for (const res of results) {
+                    if (res.status === 'fulfilled' && res.value && res.value.data && res.value.data.length > 0) {
+                        cloudResult = res.value;
+                        break;
+                    }
+                }
+                if (!cloudResult) {
+                    const stdRes = results[0];
+                    cloudResult = stdRes.status === 'fulfilled' ? stdRes.value : { data: [], hash: null };
+                }
+
                 if (cacheItem && cloudResult.hash && cacheItem.hash !== cloudResult.hash) {
                     hasChanges = true;
                 }
@@ -536,7 +616,6 @@
             notification.id = 'backgroundUpdateNotification';
             notification.className = 'fixed top-20 right-4 bg-blue-100 border border-blue-300 text-blue-800 px-4 py-3 rounded-lg shadow-lg z-50 max-w-sm';
             
-            // 加入 whitespace-nowrap 與 shrink-0 確保按鈕文字不換行且不被壓縮
             notification.innerHTML = `
                 <div class="flex items-center justify-between">
                     <div class="flex items-center space-x-2">
@@ -564,14 +643,12 @@
             if (backgroundUpdateTimer) { clearInterval(backgroundUpdateTimer); backgroundUpdateTimer = null; }
         }
 
-        // ================= 強化防呆的日期轉換 (確保強制 YYYY-MM-DD 補零) =================
+        // 以標準格式作為核心基準
         function dateKeyISO(d) {
-            // 使用 en-US 可避免部分瀏覽器在 zh-TW 語系中不會將月份與日期正確補零的問題
-            const taipeiDate = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(d);
-            const year = taipeiDate.find(p => p.type === 'year').value;
-            const month = taipeiDate.find(p => p.type === 'month').value.padStart(2, '0');
-            const day = taipeiDate.find(p => p.type === 'day').value.padStart(2, '0');
-            return `${year}-${month}-${day}`;
+            const yyyy = d.getFullYear();
+            const m = (d.getMonth() + 1).toString().padStart(2, '0');
+            const day = d.getDate().toString().padStart(2, '0');
+            return `${yyyy}-${m}-${day}`;
         }
 
         class HomeworkItem {
@@ -655,7 +732,6 @@
             
             if (editMode) {
                 item.classList.add('sortable-item');
-                // 移除原有的固定 draggable = true，改由按住手把時動態觸發
                 item.addEventListener('dragstart', handleDragStart);
                 item.addEventListener('dragend', handleDragEnd);
                 item.addEventListener('dragover', handleDragOver);
@@ -663,7 +739,6 @@
             }
             
             let displayText = homework.subject === '其它' ? `${sequenceNumber}. ${homework.content}` : `${sequenceNumber}. ${{'國語':'國','數學':'數','社會':'社','自然':'自'}[homework.subject] || homework.subject}${homework.content}`;
-            // 替手把加入 onmousedown 與 ontouchstart 事件，僅在按住把手時允許拖曳
             const dragHandle = editMode ? `<div class="drag-handle mr-2 sm:mr-3 text-xl sm:text-2xl cursor-grab hover:cursor-grabbing select-none shrink-0" draggable="false" onmousedown="this.closest('.sortable-item').setAttribute('draggable', 'true')" ontouchstart="this.closest('.sortable-item').setAttribute('draggable', 'true')">⋮⋮</div>` : '';
             
             item.innerHTML = `
@@ -694,7 +769,7 @@
         function handleDragEnd(e) {
             if (draggedElement) {
                 draggedElement.classList.remove('dragging');
-                draggedElement.setAttribute('draggable', 'false'); // 拖曳結束後關閉拖曳屬性，恢復輸入框正常的選字功能
+                draggedElement.setAttribute('draggable', 'false'); 
             }
             document.querySelectorAll('.sortable-item').forEach(i => i.classList.remove('drag-over'));
             draggedElement = null; draggedHomeworkId = null;
@@ -743,7 +818,7 @@
         function handleGlobalDragEnd(e) {
             if (draggedGlobalElement) {
                 draggedGlobalElement.classList.remove('dragging');
-                draggedGlobalElement.setAttribute('draggable', 'false'); // 拖曳結束後關閉拖曳屬性，恢復輸入框正常的選字功能
+                draggedGlobalElement.setAttribute('draggable', 'false');
             }
             document.querySelectorAll('.global-sortable-item').forEach(i => i.classList.remove('drag-over'));
             draggedGlobalElement = null;
@@ -770,7 +845,7 @@
                 if (draggedIdx > -1 && targetIdx > -1) {
                     const item = globalEvents.splice(draggedIdx, 1)[0];
                     globalEvents.splice(targetIdx, 0, item);
-                    renderGlobalEventsEditor(); // 重新渲染UI
+                    renderGlobalEventsEditor();
                     updateCountdown(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime());
                 }
             }
@@ -849,7 +924,6 @@
                        <input type="date" value="${ev.date || ''}" onchange="updateGlobalEventField('${ev.id}', 'date', this)" class="bg-white w-full sm:w-auto border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2">`
                     : `<input type="text" value="${ev.content || ''}" placeholder="輸入跑馬燈宣導訊息..." oninput="updateGlobalEventField('${ev.id}', 'content', this)" class="flex-1 w-full bg-white border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2">`;
                 
-                // 移除外層容器固定的 draggable="true"，並在拖曳把手加入動態開啟拖曳屬性的事件
                 return `
                 <div class="global-sortable-item bg-yellow-50 rounded-xl p-3 sm:p-4 border border-yellow-200 shadow-sm flex flex-col sm:flex-row gap-3 items-start sm:items-center transition-opacity ${isChecked ? '' : 'opacity-50'}" data-event-id="${ev.id}">
                     <div class="flex items-center shrink-0 w-full sm:w-auto">
@@ -862,7 +936,6 @@
                 </div>`;
             }).join('');
 
-            // 綁定跑馬燈專屬的拖曳事件
             document.querySelectorAll('.global-sortable-item').forEach(item => {
                 item.addEventListener('dragstart', handleGlobalDragStart);
                 item.addEventListener('dragend', handleGlobalDragEnd);
@@ -898,7 +971,6 @@
             updateCountdown(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime());
         }
 
-        // 獨立 API：呼叫後端獨立通道儲存
         async function saveGlobalEventsInstantly() {
             try {
                 const dataToSave = { events: globalEvents, config: globalConfig };
@@ -910,15 +982,12 @@
 
                 const response = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData, cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                console.log('✅ 全域跑馬燈設定已成功儲存至獨立雲端表單');
-                // 儲存成功後更新基準字串，避免立刻又彈出重整提示
                 currentGlobalDataString = JSON.stringify(dataToSave);
             } catch (e) {
                 console.error('儲存全域跑馬燈失敗:', e);
             }
         }
 
-        // 獨立 API：呼叫後端獨立通道載入
         async function loadGlobalEvents() {
             try {
                 const params = new URLSearchParams({
@@ -933,13 +1002,14 @@
                 
                 const result = await response.json();
                 if (result.success && result.data) {
-                    const parsedData = safeJSONParse(result.data, {});
-                    // 記錄最新雲端字串供背景比對
+                    const parsedData = safeJSONParse(result.data);
+                    const safeObj = (parsedData && typeof parsedData === 'object' && !Array.isArray(parsedData)) ? parsedData : {};
+                    
                     currentGlobalDataString = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
 
-                    if (parsedData.events) globalEvents = parsedData.events;
-                    if (parsedData.config) {
-                        globalConfig = parsedData.config;
+                    if (safeObj.events) globalEvents = safeObj.events;
+                    if (safeObj.config) {
+                        globalConfig = safeObj.config;
                         let speed = parseInt(globalConfig.marqueeSpeed, 10);
                         globalConfig.marqueeSpeed = (isNaN(speed) || speed < 150) ? 200 : (speed > 400 ? 400 : speed);
                     }
@@ -955,10 +1025,9 @@
                             display.textContent = globalConfig.marqueeSpeed + 's';
                         }
                     }
-                    console.log('✅ 成功從雲端獨立工作表載入全域跑馬燈設定');
                 }
             } catch (e) {
-                console.log('無法載入獨立跑馬燈設定，請確認 GAS 後端已更新。', e);
+                console.log('無法載入獨立跑馬燈設定。', e);
             }
         }
 
@@ -1027,7 +1096,7 @@
             
             const loadPromise = (async () => {
                 let controller = new AbortController();
-                let timeoutId = setTimeout(() => controller.abort(), 15000); // 維持原生網路最大容忍 15 秒
+                let timeoutId = setTimeout(() => controller.abort(), 15000);
                 if (!isPrefetch) {
                     showSyncStatus(true, '載入中...');
                     if (currentLoadController) currentLoadController.abort();
@@ -1043,16 +1112,11 @@
                         let rawData = result.data || [];
                         const normalizedData = normalizeHomeworkData(rawData);
                         const hash = result.hash || calculateStableHash(rawData);
-                        writeToCache(dateKey, normalizedData, hash);
+                        // 不強制在此快取，交由上層統一使用 StandardKey 快取
                         return { data: normalizedData, hash, fromCloud: true };
                     } else throw new Error(result.error || '載入失敗');
                 } catch (e) {
-                    if (e.name === 'AbortError') throw e; // 傳遞中斷錯誤
-                    try {
-                        const legacy = localStorage.getItem(dateKey);
-                        if (legacy) return { data: normalizeHomeworkData(JSON.parse(legacy)), hash: null, fromCloud: false };
-                    } catch (lErr) {}
-                    // 將實體錯誤往上層拋出
+                    if (e.name === 'AbortError') throw e; 
                     throw e; 
                 } finally {
                     clearTimeout(timeoutId);
@@ -1067,22 +1131,45 @@
             try { return await loadPromise; } finally { inflightRequests.delete(dateKey); }
         }
 
-        async function loadHomeworkWithSWR(dateKey) {
-            let cacheItem = getFromMemoryCache(dateKey) || getFromLocalStorage(dateKey);
+        // 核心改寫：平行並發載入多種格式，解決日期鍵值錯亂
+        async function loadHomeworkWithSWR(d) {
+            const variants = getDateKeyVariants(d);
+            const standardKey = variants[0];
+            
+            let cacheItem = getFromMemoryCache(standardKey) || getFromLocalStorage(standardKey);
             if (cacheItem && cacheItem.data) {
-                if (dateKeyISO(currentDate) === dateKey) { homeworkData = [...cacheItem.data]; renderAllHomework(); }
+                if (dateKeyISO(currentDate) === standardKey) { homeworkData = [...cacheItem.data]; renderAllHomework(); }
             } else { homeworkData = []; renderAllHomework(true); }
             
             try {
-                const cloudResult = await loadFromCloudWithCache(dateKey);
-                if (dateKeyISO(currentDate) !== dateKey) return; // 確保異步回來後，使用者還留在同一天
+                // 平行轟炸：同時向後端請求四種可能的日期格式（第一筆負責更新 UI 狀態，其他安靜執行）
+                const promises = variants.map((key, idx) => loadFromCloudWithCache(key, idx !== 0));
+                const results = await Promise.allSettled(promises);
                 
-                if ((!cacheItem || cacheItem.hash !== cloudResult.hash) && cloudResult.data !== undefined) {
-                    homeworkData = [...cloudResult.data]; renderAllHomework();
+                if (dateKeyISO(currentDate) !== standardKey) return; 
+                
+                let bestResult = null;
+                // 取出第一筆成功且真的有資料的回應
+                for (let i = 0; i < results.length; i++) {
+                    const res = results[i];
+                    if (res.status === 'fulfilled' && res.value && res.value.data && res.value.data.length > 0) {
+                        bestResult = res.value;
+                        break;
+                    }
+                }
+                
+                // 若全無資料，退回標準日期的結果（通常是空陣列）
+                if (!bestResult) {
+                    const stdRes = results[0];
+                    bestResult = stdRes.status === 'fulfilled' ? stdRes.value : { data: [], hash: null };
+                }
+                
+                if ((!cacheItem || cacheItem.hash !== bestResult.hash) && bestResult.data !== undefined) {
+                    writeToCache(standardKey, bestResult.data, bestResult.hash); // 統一儲存為標準格式快取
+                    homeworkData = [...bestResult.data]; renderAllHomework();
                 }
             } catch (e) {
-                // 防止被 Abort 的舊請求清除當前畫面的載入狀態
-                if (dateKeyISO(currentDate) !== dateKey) return; 
+                if (dateKeyISO(currentDate) !== standardKey) return; 
                 if (!cacheItem) { homeworkData = []; renderAllHomework(); }
             }
         }
@@ -1100,7 +1187,7 @@
             } finally { isSaving = false; }
         }
 
-        async function loadHomework() { await loadHomeworkWithSWR(dateKeyISO(currentDate)); }
+        async function loadHomework() { await loadHomeworkWithSWR(currentDate); }
 
         async function toggleEditMode() {
             if (!editMode) { showCustomPasswordDialog(); return; }
@@ -1177,21 +1264,41 @@
         }
 
         async function forceReloadHomework() {
-            const dateKey = dateKeyISO(currentDate);
-            memoryCache.delete(getCacheKey(dateKey));
-            try { localStorage.removeItem(getCacheKey(dateKey)); localStorage.removeItem(dateKey); } catch (e) {}
+            const variants = getDateKeyVariants(currentDate);
+            const standardKey = variants[0];
+            
+            memoryCache.delete(getCacheKey(standardKey));
+            try { localStorage.removeItem(getCacheKey(standardKey)); localStorage.removeItem(standardKey); } catch (e) {}
             showNotification('正在重新載入雲端資料...', 'success');
+            
             try {
                 if (currentLoadController) currentLoadController.abort();
-                const cloudResult = await loadFromCloudWithCache(dateKey);
-                if (dateKeyISO(currentDate) === dateKey) {
-                    homeworkData = [...cloudResult.data]; renderAllHomework();
-                    await loadGlobalEvents(); 
-                    showNotification('資料已重新載入！', 'success');
+                
+                const promises = variants.map((key, idx) => loadFromCloudWithCache(key, idx !== 0));
+                const results = await Promise.allSettled(promises);
+                
+                if (dateKeyISO(currentDate) !== standardKey) return;
+                
+                let bestResult = null;
+                for (let i = 0; i < results.length; i++) {
+                    const res = results[i];
+                    if (res.status === 'fulfilled' && res.value && res.value.data && res.value.data.length > 0) {
+                        bestResult = res.value;
+                        break;
+                    }
                 }
+                
+                if (!bestResult) {
+                    const stdRes = results[0];
+                    bestResult = stdRes.status === 'fulfilled' ? stdRes.value : { data: [] };
+                }
+                
+                homeworkData = [...bestResult.data]; renderAllHomework();
+                await loadGlobalEvents(); 
+                showNotification('資料已重新載入！', 'success');
             } catch (e) { 
                 if (e.name !== 'AbortError') showNotification('載入失敗，請稍後重試', 'error');
-                if (dateKeyISO(currentDate) === dateKey) {
+                if (dateKeyISO(currentDate) === standardKey) {
                     homeworkData = []; renderAllHomework(); 
                 }
             }
@@ -1292,7 +1399,7 @@
 
         function showDatePicker() {
             const overlay = document.createElement('div'); overlay.className = 'date-picker-overlay';
-            overlay.innerHTML = `<div class="date-picker-dialog"><h3 class="text-xl font-bold mb-4">📅 選擇日期</h3><input type="date" id="datePickerInput" class="date-picker-input" value="${currentDate.toISOString().split('T')[0]}" min="${firstSemesterStart.toISOString().split('T')[0]}" max="${secondSemesterEnd.toISOString().split('T')[0]}"><div class="flex gap-3"><button onclick="document.querySelector('.date-picker-overlay').remove()" class="flex-1 bg-gray-500 text-white py-2 rounded-lg">取消</button><button onclick="confirmDatePicker()" class="flex-1 bg-indigo-500 text-white py-2 rounded-lg">確認</button></div></div>`;
+            overlay.innerHTML = `<div class="date-picker-dialog"><h3 class="text-xl font-bold mb-4">📅 選擇日期</h3><input type="date" id="datePickerInput" class="date-picker-input" value="${dateKeyISO(currentDate)}" min="${dateKeyISO(firstSemesterStart)}" max="${dateKeyISO(secondSemesterEnd)}"><div class="flex gap-3"><button onclick="document.querySelector('.date-picker-overlay').remove()" class="flex-1 bg-gray-500 text-white py-2 rounded-lg">取消</button><button onclick="confirmDatePicker()" class="flex-1 bg-indigo-500 text-white py-2 rounded-lg">確認</button></div></div>`;
             document.body.appendChild(overlay);
         }
 
