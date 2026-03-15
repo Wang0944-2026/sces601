@@ -338,7 +338,7 @@
             CLASS_ID: '601',
             SHOW_SYNC_HINTS: false,
             PREFETCH_WEEKENDS: false,
-            VERSION: '1.9.0', // 升級為最終重置版本
+            VERSION: '1.10.0', // 【修復】強勢升級 1.10.0，毀滅所有舊錯誤快取
             DEBUG: true, 
             BACKGROUND_UPDATE_INTERVAL: 5000, 
             BACKGROUND_UPDATE_ENABLED: true 
@@ -965,19 +965,29 @@
             setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 4000);
         }
 
-        // ================= 終極還原：發送 100% 最初始的 payload =================
+        // ================= 終極魔法：強制寫入純文字 (The Apostrophe Trick) =================
         async function saveToGoogleSheets(dateKey, data) {
             try {
                 const formData = new FormData();
                 formData.append('action', 'save');
-                formData.append('dateKey', dateKey);
+                
+                // 【神級解法】在 A 欄(dateKey) 的內容前強制加一個單引號 "'"
+                // 這會觸發 Google Sheets 的防護機制，逼迫它把這格當作「純文字」寫入
+                // 寫入後，試算表會吃掉單引號隱藏起來，只留下完美的 2026-03-16！
+                formData.append('dateKey', "'" + dateKey);
+                
                 formData.append('classId', CACHE_CONFIG.CLASS_ID);
                 formData.append('data', JSON.stringify(data));
                 formData.append('token', 'homework2025');
                 
-                // 完全還原為最初始的 .toISOString() 發送方式，讓後端不會解譯錯誤
-                formData.append('timestamp', new Date().toISOString());
-                // 確實補回 userAgent 確保記錄不漏失
+                const now = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+                
+                // 在 D 欄(timestamp) 同樣加上單引號，徹底拒絕 Google Sheets 轉成中文下午時間
+                formData.append('timestamp', "'" + ts); 
+                
+                // 絕對確保您的 userAgent 被送出
                 formData.append('userAgent', navigator.userAgent);
 
                 const response = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData, cache: 'no-store' });
