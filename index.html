@@ -324,7 +324,6 @@
             { id: 'e4', type: 'countdown', name: '校慶＆畢業典禮 (6/18)', date: '2026-06-18', enabled: true }
         ];
         
-        // 紀錄當前載入的跑馬燈原始資料，用於背景比對
         let currentGlobalDataString = null;
 
         const firstSemesterStart = new Date('2025-09-01');
@@ -332,7 +331,6 @@
         const secondSemesterStart = new Date('2026-02-11');
         const secondSemesterEnd = new Date('2026-08-31');
 
-        // 請確保此處為最新佈署的 GAS 網址
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwXXyyN1nib4ovwXmmEVzMYAS9j3X370DhRPLkXFNzQD16aYRi1r-bg5giOCc7nZPFhiQ/exec';
 
         const CACHE_CONFIG = {
@@ -340,7 +338,7 @@
             CLASS_ID: '601',
             SHOW_SYNC_HINTS: false,
             PREFETCH_WEEKENDS: false,
-            VERSION: '1.8.0', // 【修復】升級版本至 1.8.0，徹底摧毀舊快取
+            VERSION: '1.9.0', // 升級為最終重置版本
             DEBUG: true, 
             BACKGROUND_UPDATE_INTERVAL: 5000, 
             BACKGROUND_UPDATE_ENABLED: true 
@@ -353,9 +351,7 @@
         let isBackgroundUpdating = false;
         let lastBackgroundUpdate = 0;
 
-        // 【修復：絕對零干擾的日期格式化】
-        // 放棄原先的 Intl.DateTimeFormat，改用絕對嚴謹的 padStart，
-        // 確保任何瀏覽器送出的 Key 都是完美的 YYYY-MM-DD，根絕 3/16 變 3-16 的悲劇。
+        // 徹底根絕跨裝置的日期格式差異，強制維持標準 YYYY-MM-DD
         function dateKeyISO(d) {
             const yyyy = d.getFullYear();
             const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -363,7 +359,6 @@
             return `${yyyy}-${mm}-${dd}`;
         }
 
-        // 讀取端防呆機制：修復逗號截斷或換行引發的 JSON 損毀
         function parseRawData(rawData) {
             if (typeof rawData === 'string') {
                 try { 
@@ -488,7 +483,6 @@
             }).filter(Boolean);
         }
 
-        // 背景更新與比對邏輯
         async function performBackgroundUpdate() {
             if (isBackgroundUpdating || editMode) return;
             const now = Date.now();
@@ -766,7 +760,6 @@
             document.querySelectorAll('.global-sortable-item').forEach(i => i.classList.remove('drag-over'));
         }
 
-        // ================= 作業管理相關 =================
         function updateHomeworkSubject(id, subject) {
             const hw = homeworkData.find(h => h.id === id);
             if (hw) { hw.subject = subject; hw.timestamp = new Date().toISOString(); }
@@ -812,7 +805,6 @@
             setTimeout(() => document.querySelector(`[data-homework-id="${hw.id}"] input[type="text"]`)?.focus(), 100);
         }
 
-        // ================= 全域跑馬燈設定相關 =================
         function updateMarqueeSpeed(val) {
             globalConfig.marqueeSpeed = parseInt(val, 10);
             document.getElementById('speedValueDisplay').textContent = globalConfig.marqueeSpeed + 's';
@@ -945,8 +937,6 @@
             }
         }
 
-        // ==============================================================
-
         function showSavingDialog(msg = '正在儲存到雲端...') {
             const overlay = document.createElement('div');
             overlay.className = 'saving-overlay';
@@ -975,7 +965,7 @@
             setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 4000);
         }
 
-        // 【終極修復：手動建構標準格式字串並確保攜帶 userAgent】
+        // ================= 終極還原：發送 100% 最初始的 payload =================
         async function saveToGoogleSheets(dateKey, data) {
             try {
                 const formData = new FormData();
@@ -985,13 +975,9 @@
                 formData.append('data', JSON.stringify(data));
                 formData.append('token', 'homework2025');
                 
-                // 強制轉換為 YYYY-MM-DD HH:mm:ss 以阻絕 Google Sheets 自動切換為中文格式
-                const now = new Date();
-                const pad = n => String(n).padStart(2, '0');
-                const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-                formData.append('timestamp', ts); 
-                
-                // 確保 userAgent 欄位不會遺失
+                // 完全還原為最初始的 .toISOString() 發送方式，讓後端不會解譯錯誤
+                formData.append('timestamp', new Date().toISOString());
+                // 確實補回 userAgent 確保記錄不漏失
                 formData.append('userAgent', navigator.userAgent);
 
                 const response = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData, cache: 'no-store' });
@@ -1054,7 +1040,6 @@
             try { return await loadPromise; } finally { inflightRequests.delete(dateKey); }
         }
 
-        // 【讀取端防呆機制：跨裝置日期差異雙重搜捕】
         async function loadHomeworkWithSWR(dateKey) {
             let cacheItem = getFromMemoryCache(dateKey) || getFromLocalStorage(dateKey);
             if (cacheItem && cacheItem.data) {
@@ -1064,7 +1049,6 @@
             try {
                 let cloudResult = await loadFromCloudWithCache(dateKey);
                 
-                // --- 舊資料與跨裝置救援機制：若用原本的鍵值找不到，自動生成另一個有補零/無補零的鍵值進行備援搜捕 ---
                 if (!cloudResult || !cloudResult.data || cloudResult.data.length === 0) {
                     const padMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
                     const padDay = String(currentDate.getDate()).padStart(2, '0');
@@ -1194,7 +1178,6 @@
                 if (currentLoadController) currentLoadController.abort();
                 let cloudResult = await loadFromCloudWithCache(dateKey);
                 
-                // --- 舊資料與跨裝置救援機制 ---
                 if (!cloudResult || !cloudResult.data || cloudResult.data.length === 0) {
                     const padMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
                     const padDay = String(currentDate.getDate()).padStart(2, '0');
