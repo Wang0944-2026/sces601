@@ -338,7 +338,7 @@
             CLASS_ID: '601',
             SHOW_SYNC_HINTS: false,
             PREFETCH_WEEKENDS: false,
-            VERSION: '1.12.0', // 【終極更新】1.12.0 徹底清空錯誤快取記憶
+            VERSION: '1.13.0', // 【更新】強制清空快取，確保所有設定重新抓取
             DEBUG: true, 
             BACKGROUND_UPDATE_INTERVAL: 5000, 
             BACKGROUND_UPDATE_ENABLED: true 
@@ -351,7 +351,7 @@
         let isBackgroundUpdating = false;
         let lastBackgroundUpdate = 0;
 
-        // 徹底根絕跨裝置的日期格式差異，強制維持標準 YYYY-MM-DD
+        // 強制維持標準 YYYY-MM-DD
         function dateKeyISO(d) {
             const yyyy = d.getFullYear();
             const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -483,7 +483,6 @@
             }).filter(Boolean);
         }
 
-        // 背景更新與比對邏輯
         async function performBackgroundUpdate() {
             if (isBackgroundUpdating || editMode) return;
             const now = Date.now();
@@ -501,7 +500,7 @@
                     hasChanges = true;
                 }
 
-                const params = newSearchParams({
+                const params = new URLSearchParams({
                     action: 'loadGlobal',
                     classId: CACHE_CONFIG.CLASS_ID,
                     token: 'homework2025',
@@ -966,26 +965,28 @@
             setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 4000);
         }
 
-        // ================= 【核心突破】在前端寫死防禦機制，逼迫 Google Sheets 收編為純文字 =================
+        // ================= 【防線一併啟動】 =================
         async function saveToGoogleSheets(dateKey, data) {
             try {
                 const formData = new FormData();
                 formData.append('action', 'save');
                 
-                // 【A 欄防禦】: 強制加單引號，強迫試算表把它存成純文字 (已證實完美解決 A 欄與 3/16 問題)
+                // 【A 欄防線】：強制單引號，確保試算表 100% 收編為純文字 (保留之前成功解法)
                 formData.append('dateKey', "'" + dateKey); 
                 
                 formData.append('classId', CACHE_CONFIG.CLASS_ID);
                 formData.append('data', JSON.stringify(data));
                 formData.append('token', 'homework2025');
                 
-                // 【D 欄防禦】: 精準捏出 YYYY-MM-DD HH:mm:ss，並加上單引號，強迫試算表不准變「下午」
+                // 【D 欄防線】：精準組裝字串 + 單引號，強制拒絕 Google Sheets 轉成下午格式！
                 const now = new Date();
                 const pad = n => String(n).padStart(2, '0');
                 const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+                
+                // 保留原始變數避免後端錯誤，但新增 updatedAt 欄位讓後端抓取
                 formData.append('timestamp', "'" + ts); 
                 
-                // 【E 欄防禦】: 多重變數名轟炸，確保不論您後端的 GAS 叫什麼名字，絕對都能抓到設備資訊
+                // 【E 欄防線】：地毯式變數名轟炸，確保後端絕對接得到設備資訊！
                 const deviceStr = navigator.userAgent || "Unknown Browser";
                 formData.append('userAgent', deviceStr);
                 formData.append('user_agent', deviceStr);
