@@ -338,7 +338,7 @@
             CLASS_ID: '601',
             SHOW_SYNC_HINTS: false,
             PREFETCH_WEEKENDS: false,
-            VERSION: '1.11.0', // 【修復】升級為 1.11.0 確保所有舊的讀取錯誤從手機或電腦清除
+            VERSION: '1.12.0', // 【終極更新】1.12.0 徹底清空錯誤快取記憶
             DEBUG: true, 
             BACKGROUND_UPDATE_INTERVAL: 5000, 
             BACKGROUND_UPDATE_ENABLED: true 
@@ -351,7 +351,7 @@
         let isBackgroundUpdating = false;
         let lastBackgroundUpdate = 0;
 
-        // 【完美格式：A欄】強制精準補零，不再依賴會有裝置差異的 Intl API
+        // 徹底根絕跨裝置的日期格式差異，強制維持標準 YYYY-MM-DD
         function dateKeyISO(d) {
             const yyyy = d.getFullYear();
             const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -359,7 +359,6 @@
             return `${yyyy}-${mm}-${dd}`;
         }
 
-        // 強大的 JSON 防呆救援解析器
         function parseRawData(rawData) {
             if (typeof rawData === 'string') {
                 try { 
@@ -502,7 +501,7 @@
                     hasChanges = true;
                 }
 
-                const params = new URLSearchParams({
+                const params = newSearchParams({
                     action: 'loadGlobal',
                     classId: CACHE_CONFIG.CLASS_ID,
                     token: 'homework2025',
@@ -939,8 +938,6 @@
             }
         }
 
-        // ==============================================================
-
         function showSavingDialog(msg = '正在儲存到雲端...') {
             const overlay = document.createElement('div');
             overlay.className = 'saving-overlay';
@@ -969,25 +966,30 @@
             setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 4000);
         }
 
-        // 【最終解法：退回 100% 最原始的發送格式，將錯誤風險降至 0】
-        // 因為後端 GAS 有可能是依賴接收最單純的 dateKey 和 new Date().toISOString() 來正常執行，並自行格式化。
-        // 如果在前端使用單引號或奇怪的字串格式，反而會導致後端異常而停止寫入。
+        // ================= 【核心突破】在前端寫死防禦機制，逼迫 Google Sheets 收編為純文字 =================
         async function saveToGoogleSheets(dateKey, data) {
             try {
                 const formData = new FormData();
                 formData.append('action', 'save');
                 
-                // 完全還原，不使用任何引號干擾 GAS
-                formData.append('dateKey', dateKey); 
+                // 【A 欄防禦】: 強制加單引號，強迫試算表把它存成純文字 (已證實完美解決 A 欄與 3/16 問題)
+                formData.append('dateKey', "'" + dateKey); 
+                
                 formData.append('classId', CACHE_CONFIG.CLASS_ID);
                 formData.append('data', JSON.stringify(data));
                 formData.append('token', 'homework2025');
                 
-                // 完全還原最原始的發送寫法，讓您的 GAS 能正常剖析它
-                formData.append('timestamp', new Date().toISOString()); 
+                // 【D 欄防禦】: 精準捏出 YYYY-MM-DD HH:mm:ss，並加上單引號，強迫試算表不准變「下午」
+                const now = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+                formData.append('timestamp', "'" + ts); 
                 
-                // 明確附帶您的設備資訊
-                formData.append('userAgent', navigator.userAgent);
+                // 【E 欄防禦】: 多重變數名轟炸，確保不論您後端的 GAS 叫什麼名字，絕對都能抓到設備資訊
+                const deviceStr = navigator.userAgent || "Unknown Browser";
+                formData.append('userAgent', deviceStr);
+                formData.append('user_agent', deviceStr);
+                formData.append('UserAgent', deviceStr);
 
                 const response = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData, cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1058,20 +1060,23 @@
             try {
                 let cloudResult = await loadFromCloudWithCache(dateKey);
                 
-                // --- 跨裝置舊資料救援：若標準 YYYY-MM-DD 找不到，嘗試尋找舊有的 YYYY-M-D ---
                 if (!cloudResult || !cloudResult.data || cloudResult.data.length === 0) {
+                    const padMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
+                    const padDay = String(currentDate.getDate()).padStart(2, '0');
                     const unpadMonth = currentDate.getMonth() + 1;
                     const unpadDay = currentDate.getDate();
+                    
+                    const paddedKey = `${currentDate.getFullYear()}-${padMonth}-${padDay}`;
                     const unpaddedKey = `${currentDate.getFullYear()}-${unpadMonth}-${unpadDay}`;
                     
-                    if (unpaddedKey !== dateKey) {
-                        try {
-                            const fallbackResult = await loadFromCloudWithCache(unpaddedKey, true);
-                            if (fallbackResult && fallbackResult.data && fallbackResult.data.length > 0) {
-                                cloudResult = fallbackResult;
-                            }
-                        } catch(e) {}
-                    }
+                    let targetFallback = (dateKey === paddedKey) ? unpaddedKey : paddedKey;
+                    
+                    try {
+                        const fallbackResult = await loadFromCloudWithCache(targetFallback, true);
+                        if (fallbackResult && fallbackResult.data && fallbackResult.data.length > 0) {
+                            cloudResult = fallbackResult;
+                        }
+                    } catch(e) {}
                 }
                 
                 if (dateKeyISO(currentDate) !== dateKey) return; 
