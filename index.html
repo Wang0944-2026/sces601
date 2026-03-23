@@ -347,7 +347,7 @@
             PREFETCH_WEEKENDS: false,
             VERSION: '1.13.0', // 【更新】強制清空快取，確保所有設定重新抓取
             DEBUG: true, 
-            BACKGROUND_UPDATE_INTERVAL: 5000, 
+            BACKGROUND_UPDATE_INTERVAL: 10000, // 改為 10000 (10秒自動更新)
             BACKGROUND_UPDATE_ENABLED: true 
         };
 
@@ -498,15 +498,19 @@
             lastBackgroundUpdate = now;
             try {
                 let hasChanges = false;
+                let newHomeworkData = null;
 
+                // 1. 檢查作業資料
                 const dateKey = dateKeyISO(currentDate);
                 const cacheItem = getFromMemoryCache(dateKey) || getFromLocalStorage(dateKey);
-                const cloudResult = await loadFromCloudWithCache(dateKey, true);
+                const cloudResult = await loadFromCloudWithCache(dateKey, true); // true = 靜默預先載入
                 
-                if (cacheItem && cloudResult.hash && cacheItem.hash !== cloudResult.hash) {
+                if (cloudResult && cloudResult.hash && (!cacheItem || cacheItem.hash !== cloudResult.hash)) {
                     hasChanges = true;
+                    newHomeworkData = cloudResult.data;
                 }
 
+                // 2. 檢查全域活動/跑馬燈資料
                 const params = new URLSearchParams({
                     action: 'loadGlobal',
                     classId: CACHE_CONFIG.CLASS_ID,
@@ -520,41 +524,35 @@
                         const fetchedString = typeof globalResult.data === 'string' ? globalResult.data : JSON.stringify(globalResult.data);
                         if (currentGlobalDataString !== null && currentGlobalDataString !== fetchedString) {
                             hasChanges = true;
+                            currentGlobalDataString = fetchedString;
+                            
+                            const parsedData = parseRawData(globalResult.data);
+                            const safeObj = (parsedData && typeof parsedData === 'object' && !Array.isArray(parsedData)) ? parsedData : {};
+                            if (safeObj.events) globalEvents = safeObj.events;
+                            if (safeObj.config) {
+                                globalConfig = safeObj.config;
+                                let speed = parseInt(globalConfig.marqueeSpeed, 10);
+                                globalConfig.marqueeSpeed = (isNaN(speed) || speed < 150) ? 200 : (speed > 400 ? 400 : speed);
+                            }
                         }
                     }
                 }
 
-                if (hasChanges) {
-                    showBackgroundUpdateNotification();
+                // 3. 如果有更新，直接套用並重新渲染畫面
+                if (hasChanges && !editMode) {
+                    if (newHomeworkData) {
+                        homeworkData = [...newHomeworkData];
+                        renderAllHomework();
+                    }
+                    updateCountdown(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate()).getTime());
+                    showNotification('資料已在背景自動更新 ✨', 'success');
                 }
             } catch (error) {
+                console.error('背景自動更新失敗:', error);
             } finally {
                 isBackgroundUpdating = false;
             }
         }
-
-        function showBackgroundUpdateNotification() {
-            if (document.getElementById('backgroundUpdateNotification')) return;
-            const notification = document.createElement('div');
-            notification.id = 'backgroundUpdateNotification';
-            notification.className = 'fixed top-20 right-4 bg-blue-100 border border-blue-300 text-blue-800 px-4 py-3 rounded-lg shadow-lg z-50 max-w-sm';
-            
-            notification.innerHTML = `
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center space-x-2">
-                        <span class="text-2xl">🔄</span>
-                        <div class="font-bold text-sm sm:text-base">資料已有更新，請重整畫面</div>
-                    </div>
-                    <button onclick="applyBackgroundUpdate()" class="ml-3 shrink-0 whitespace-nowrap bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors">重整畫面</button>
-                </div>
-                <button onclick="dismissBackgroundUpdate()" class="absolute top-1 right-2 text-blue-400 hover:text-blue-600 text-xl font-bold leading-none">×</button>
-            `;
-            document.body.appendChild(notification);
-            setTimeout(dismissBackgroundUpdate, 15000);
-        }
-
-        async function applyBackgroundUpdate() { dismissBackgroundUpdate(); await forceReloadHomework(); }
-        function dismissBackgroundUpdate() { document.getElementById('backgroundUpdateNotification')?.remove(); }
 
         function startBackgroundUpdate() {
             if (!CACHE_CONFIG.BACKGROUND_UPDATE_ENABLED) return;
