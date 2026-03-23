@@ -173,8 +173,14 @@
         }
     </style>
 </head>
-<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-2 sm:p-4">
-    <div class="max-w-4xl mx-auto">
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-2 sm:p-4 flex flex-col relative">
+    <!-- 左上角雲端圖片 -->
+    <img src="https://drive.google.com/thumbnail?id=1gyziBxjBBTP7PzNf_tRqbRO6yr3pIWo7&sz=w1000" referrerpolicy="no-referrer" alt="左上角裝飾圖" class="absolute sm:fixed top-2 left-2 sm:top-4 sm:left-4 w-16 sm:w-20 md:w-24 h-auto object-contain z-10 opacity-90 pointer-events-none drop-shadow-md">
+    
+    <!-- 右下角手寫簽名檔 (底層) -->
+    <img src="https://drive.google.com/thumbnail?id=1SOzUZImsv_Hi152LoQ9K6V4hsVRPzxwb&sz=w1000" referrerpolicy="no-referrer" alt="老師簽名" class="absolute sm:fixed bottom-2 right-2 sm:bottom-4 sm:right-4 w-8 sm:w-12 md:w-14 h-auto object-contain z-10 opacity-85 pointer-events-none drop-shadow-sm">
+
+    <div class="max-w-4xl mx-auto w-full flex-grow">
         <!-- 標題與頂部資訊 -->
         <div class="mb-4 text-center">
             <h1 class="flex items-center justify-center text-2xl sm:text-3xl md:text-4xl font-bold text-indigo-800 mb-2 md:mb-3">
@@ -312,6 +318,13 @@
                     </button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- 頁尾版權宣告 -->
+    <div class="w-full flex justify-center mt-4 sm:mt-6 pb-2 z-10 relative pointer-events-none">
+        <div class="bg-white/60 backdrop-blur-md px-5 py-2 rounded-full shadow-md border border-white/50 text-gray-500 font-extrabold text-xs sm:text-sm tracking-widest text-center">
+            大榮老師製作 © 2026 | Version 10.3 (v.10.3)
         </div>
     </div>
 
