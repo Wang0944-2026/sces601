@@ -174,8 +174,10 @@
     </style>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen p-2 sm:p-4 flex flex-col relative">
-    <!-- 左上角雲端圖片 -->
-    <img src="https://drive.google.com/thumbnail?id=1gyziBxjBBTP7PzNf_tRqbRO6yr3pIWo7&sz=w1000" referrerpolicy="no-referrer" alt="左上角裝飾圖" class="absolute sm:fixed top-2 left-2 sm:top-4 sm:left-4 w-16 sm:w-20 md:w-24 h-auto object-contain z-10 opacity-90 pointer-events-none drop-shadow-md">
+    <!-- 左上角雲端圖片 (附帶學校超連結，取消固定懸浮與防點擊) -->
+    <a href="https://sces.km.edu.tw/" target="_blank" class="absolute top-2 left-2 sm:top-4 sm:left-4 z-20 hover:opacity-80 transition-opacity" title="前往上岐國小校網">
+        <img src="https://drive.google.com/thumbnail?id=1gyziBxjBBTP7PzNf_tRqbRO6yr3pIWo7&sz=w1000" referrerpolicy="no-referrer" alt="左上角裝飾圖" class="w-16 sm:w-20 md:w-24 h-auto object-contain drop-shadow-md">
+    </a>
     
     <!-- 右下角手寫簽名檔 (底層) -->
     <img src="https://drive.google.com/thumbnail?id=1SOzUZImsv_Hi152LoQ9K6V4hsVRPzxwb&sz=w1000" referrerpolicy="no-referrer" alt="老師簽名" class="absolute sm:fixed bottom-2 right-2 sm:bottom-4 sm:right-4 w-8 sm:w-12 md:w-14 h-auto object-contain z-10 opacity-85 pointer-events-none drop-shadow-sm">
@@ -561,7 +563,10 @@
                     showNotification('資料已在背景自動更新 ✨', 'success');
                 }
             } catch (error) {
-                console.error('背景自動更新失敗:', error);
+                // 過濾掉因為 15 秒超時而主動中斷連線 (AbortError) 的無害錯誤
+                if (error.name !== 'AbortError' && !String(error.message).includes('aborted')) {
+                    console.error('背景自動更新失敗:', error);
+                }
             } finally {
                 isBackgroundUpdating = false;
             }
@@ -1122,7 +1127,58 @@
             } finally { isSaving = false; }
         }
 
-        async function loadHomework() { await loadHomeworkWithSWR(dateKeyISO(currentDate)); }
+        async function loadHomework() { 
+            await loadHomeworkWithSWR(dateKeyISO(currentDate)); 
+            prefetchAdjacentDays(); // 預先載入前後天資料以加快切換速度
+        }
+
+        async function prefetchAdjacentDays() {
+            const getValidDay = (date, step) => {
+                let d = new Date(date);
+                d.setDate(d.getDate() + step);
+                while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + step);
+                return d;
+            };
+
+            let daysToPrefetch = [];
+            let currPrev = new Date(currentDate);
+            let currNext = new Date(currentDate);
+
+            for (let i = 0; i < 5; i++) {
+                currPrev = getValidDay(currPrev, -1);
+                if (currPrev >= firstSemesterStart) daysToPrefetch.push(new Date(currPrev));
+
+                currNext = getValidDay(currNext, 1);
+                if (currNext <= secondSemesterEnd) daysToPrefetch.push(new Date(currNext));
+            }
+
+            // 循序靜默發送 API 請求寫入 Cache，避免併發過高被 Apps Script 阻擋
+            for (let d of daysToPrefetch) {
+                try {
+                    await loadFromCloudWithCache(dateKeyISO(d), true);
+                } catch (e) {}
+            }
+        }
+
+        async function autoSaveBeforeNavigate() {
+            if (!editMode) return;
+            homeworkData.forEach(hw => {
+                if (hw.status === 'editing') {
+                    if (hw.content.trim()) hw.status = 'confirmed';
+                    else homeworkData = homeworkData.filter(h => h.id !== hw.id);
+                }
+            });
+            showSyncStatus(true, '自動儲存中...');
+            try {
+                await saveHomeworkInstantly();
+                await saveGlobalEventsInstantly();
+                showNotification('已自動儲存當前變更', 'success');
+            } catch (e) {
+                showNotification('自動儲存失敗，請確認網路狀態', 'error');
+            } finally {
+                showSyncStatus(false);
+            }
+        }
 
         async function toggleEditMode() {
             if (!editMode) { showCustomPasswordDialog(); return; }
@@ -1374,20 +1430,29 @@
         }
 
         let navLocked = false;
-        function moveDay(step) {
-            if (navLocked) return; navLocked = true; setTimeout(() => navLocked = false, 300);
+        async function moveDay(step) {
+            if (navLocked) return; navLocked = true;
+            if (editMode) await autoSaveBeforeNavigate();
+            
             do {
                 currentDate.setDate(currentDate.getDate() + step);
                 if (currentDate < firstSemesterStart) { currentDate = new Date(firstSemesterStart); break; }
                 if (currentDate > secondSemesterEnd) { currentDate = new Date(secondSemesterEnd); break; }
             } while (currentDate.getDay() === 0 || currentDate.getDay() === 6);
+            
             updateDateDisplay();
+            setTimeout(() => navLocked = false, 300);
         }
-        function previousDay() { moveDay(-1); }
-        function nextDay() { moveDay(1); }
-        function today() {
-            if (navLocked) return; navLocked = true; setTimeout(() => navLocked = false, 300);
-            currentDate = new Date(); updateDateDisplay();
+        async function previousDay() { await moveDay(-1); }
+        async function nextDay() { await moveDay(1); }
+        
+        async function today() {
+            if (navLocked) return; navLocked = true;
+            if (editMode) await autoSaveBeforeNavigate();
+            
+            currentDate = new Date(); 
+            updateDateDisplay();
+            setTimeout(() => navLocked = false, 300);
         }
 
         function showDatePicker() {
@@ -1402,6 +1467,8 @@
             const d = new Date(input.value + 'T12:00:00');
             if (d < firstSemesterStart || d > secondSemesterEnd) return showNotification('所選日期超出學期範圍！', 'warning');
             if (d.getDay() === 0 || d.getDay() === 6) return showNotification('週末沒有上課，請選擇平日！', 'warning');
+            
+            if (editMode) await autoSaveBeforeNavigate();
             
             currentDate = d; document.querySelector('.date-picker-overlay')?.remove();
             showNotification('正在載入所選日期...', 'success'); await updateDateDisplay();
