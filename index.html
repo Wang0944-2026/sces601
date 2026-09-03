@@ -319,7 +319,7 @@
 
         <!-- 版權與版本宣告 -->
         <footer class="mt-8 mb-4 text-center text-gray-400 text-sm font-medium">
-            大榮老師製作 &copy; 2026 | Version 2.7 (v2.7)
+            大榮老師製作 &copy; 2026 | Version 2.8 (v2.8)
         </footer>
     </div>
 
@@ -1367,8 +1367,8 @@
         }
 
         function showQRCode() {
-            // 使用指定的固定網址並編碼
-            const currentUrl = encodeURIComponent('https://wang0944-2026.github.io/gpes605/');
+            // 動態獲取目前網址並編碼
+            const currentUrl = encodeURIComponent(window.location.href);
             // 透過外部輕量 API 產生 QR Code
             const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${currentUrl}`;
             
