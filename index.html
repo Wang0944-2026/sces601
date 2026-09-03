@@ -246,7 +246,7 @@
                 </div>
                 
                 <!-- 作業列表容器 -->
-                <div id="homeworkContainer" class="space-y-4">
+                <div id="homeworkContainer" class="space-y-2">
                     <div id="sortModeIndicator" class="sort-mode-indicator" style="display: none;">
                         🔄 拖拽排序模式：拖動作業項目來調整順序
                     </div>
@@ -289,7 +289,12 @@
                         </div>
                         <div class="flex items-center bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
                             <span class="mr-2 text-sm font-bold text-gray-600">🔐 系統密碼:</span>
-                            <input type="text" id="systemPasswordInput" class="w-24 sm:w-32 bg-white border border-gray-300 rounded px-2 py-1 text-sm font-medium focus:ring-2 focus:ring-indigo-500" placeholder="0944" oninput="updateSystemPassword(this.value)">
+                            <div class="relative flex items-center">
+                                <input type="password" id="systemPasswordInput" class="w-24 sm:w-32 bg-white border border-gray-300 rounded px-2 py-1 pr-8 text-sm font-medium focus:ring-2 focus:ring-indigo-500" placeholder="0944" oninput="updateSystemPassword(this.value)">
+                                <button type="button" onclick="togglePasswordVisibility('systemPasswordInput')" class="absolute right-1 text-gray-500 hover:text-gray-700 w-6 h-6 flex items-center justify-center outline-none">
+                                    <span id="eyeIcon_systemPasswordInput" class="text-sm">👁️</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                     
@@ -319,7 +324,7 @@
 
         <!-- 版權與版本宣告 -->
         <footer class="mt-8 mb-4 text-center text-gray-400 text-sm font-medium">
-            大榮老師製作 &copy; 2026 | Version 2.8 (v2.8)
+            大榮老師製作 &copy; 2026 | Version 3.0 (v3.0)
         </footer>
     </div>
 
@@ -387,6 +392,28 @@
                 }
             }
             return rawData || [];
+        }
+
+        function normalizePassword(pw) {
+            if (!pw) return '';
+            let str = String(pw).toLowerCase();
+            return str.replace(/[\uff01-\uff5e]/g, function(ch) {
+                return String.fromCharCode(ch.charCodeAt(0) - 0xfee0);
+            });
+        }
+
+        function togglePasswordVisibility(inputId) {
+            const input = document.getElementById(inputId);
+            const icon = document.getElementById(`eyeIcon_${inputId}`);
+            if (input && icon) {
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    icon.textContent = '🙈';
+                } else {
+                    input.type = 'password';
+                    icon.textContent = '👁️';
+                }
+            }
         }
 
         class CacheItem {
@@ -795,7 +822,7 @@
         }
         
         function updateSystemPassword(val) {
-            globalConfig.password = val;
+            globalConfig.password = normalizePassword(val);
         }
 
         function renderGlobalEventsEditor() {
@@ -1109,15 +1136,34 @@
         function showCustomPasswordDialog() {
             const overlay = document.createElement('div');
             overlay.className = 'password-dialog-overlay';
-            overlay.innerHTML = `<div class="bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full mx-4"><h3 class="text-xl font-bold text-center mb-4">🔐 請輸入系統密碼</h3><input type="password" id="customPasswordInput" placeholder="請輸入密碼..." class="w-full border border-gray-300 rounded-lg p-3 text-center text-lg font-medium mb-4 outline-none focus:ring-2 focus:ring-indigo-500"><div class="flex gap-3"><button onclick="document.querySelector('.password-dialog-overlay').remove()" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-lg font-medium transition-colors">取消</button><button onclick="confirmPassword()" class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white py-2 rounded-lg font-medium transition-colors">確認</button></div></div>`;
+            overlay.innerHTML = `
+                <div class="bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full mx-4">
+                    <h3 class="text-xl font-bold text-center mb-4">🔐 請輸入系統密碼</h3>
+                    <div class="relative mb-4">
+                        <input type="password" id="customPasswordInput" placeholder="請輸入密碼..." class="w-full border border-gray-300 rounded-lg p-3 pr-12 text-center text-lg font-medium outline-none focus:ring-2 focus:ring-indigo-500 transition-all">
+                        <button type="button" onclick="togglePasswordVisibility('customPasswordInput')" class="absolute inset-y-0 right-2 flex items-center px-2 text-gray-500 hover:text-gray-700 focus:outline-none">
+                            <span id="eyeIcon_customPasswordInput" class="text-xl">👁️</span>
+                        </button>
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="document.querySelector('.password-dialog-overlay').remove()" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-lg font-medium transition-colors">取消</button>
+                        <button onclick="confirmPassword()" class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white py-2 rounded-lg font-medium transition-colors">確認</button>
+                    </div>
+                </div>`;
             document.body.appendChild(overlay);
-            setTimeout(() => { const i = document.getElementById('customPasswordInput'); i.focus(); i.onkeypress = e => { if(e.key==='Enter') confirmPassword(); }; }, 100);
+            setTimeout(() => { 
+                const i = document.getElementById('customPasswordInput'); 
+                i.focus(); 
+                i.onkeypress = e => { if(e.key==='Enter') confirmPassword(); }; 
+            }, 100);
         }
 
         function confirmPassword() {
             const input = document.getElementById('customPasswordInput');
-            const targetPass = globalConfig.password || '0944';
-            if (input?.value === targetPass) {
+            const entered = normalizePassword(input?.value);
+            const targetPass = normalizePassword(globalConfig.password || '0944');
+            
+            if (entered === targetPass) {
                 editMode = true; updateEditModeUI(); document.querySelector('.password-dialog-overlay').remove();
                 showToast('已進入編輯模式', 'success'); renderAllHomework();
             } else { showToast('密碼錯誤！', 'error'); input.value = ''; input.focus(); }
@@ -1208,7 +1254,6 @@
                     }
                     
                     let days = Math.floor((targetTime - tDay) / 86400000);
-                    
                     if (days < 0) return ''; 
 
                     let daysText = `<span class="whitespace-nowrap">還有 <span class="text-xl text-red-500 font-black mx-1">${days}</span> 天</span>`;
@@ -1367,10 +1412,7 @@
         }
 
         function showQRCode() {
-            // 動態獲取目前網址並編碼
-            const currentUrl = encodeURIComponent(window.location.href);
-            // 透過外部輕量 API 產生 QR Code
-            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${currentUrl}`;
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent("https://wang0944-2026.github.io/gpes605/")}`;
             
             const overlay = document.createElement('div');
             overlay.className = 'qrcode-overlay fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[10001] opacity-0 transition-opacity duration-300';
@@ -1380,7 +1422,7 @@
                 <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-2xl transform scale-95 transition-transform duration-300 flex flex-col items-center relative max-w-sm mx-4">
                     <button onclick="closeQRCode(this.closest('.qrcode-overlay'))" class="absolute top-2 right-3 text-gray-400 hover:text-gray-600 text-3xl font-bold leading-none">&times;</button>
                     <h3 class="text-xl sm:text-2xl font-bold text-gray-800 mb-4 flex items-center"><span class="mr-2">📱</span> 行動裝置掃描</h3>
-                    <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mb-4 relative min-h-[200px] flex items-center justify-center">
+                    <div class="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mb-4 relative min-h-[200px] flex items-center justify-center w-full">
                         <div class="absolute inset-0 border-4 border-transparent border-t-indigo-500 rounded-full animate-spin w-8 h-8 m-auto" style="z-index: 1;"></div>
                         <img src="${qrUrl}" alt="QR Code" class="w-48 h-48 sm:w-56 sm:h-56 object-contain relative z-10" onload="this.previousElementSibling.style.display='none'">
                     </div>
@@ -1389,8 +1431,6 @@
             `;
             
             document.body.appendChild(overlay);
-            
-            // 觸發進場動畫
             requestAnimationFrame(() => {
                 overlay.classList.remove('opacity-0');
                 overlay.querySelector('div').classList.remove('scale-95');
